@@ -12,8 +12,9 @@ from reward import calculate_reward
 class GearEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self, data_dir=None):
         super(GearEnv, self).__init__()
+        self.data_dir = data_dir if data_dir else 'data/intermediate'
         # Define Action Space: [action_type, x, y, num_teeth, z_layer], normalized.
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32)
 
@@ -92,7 +93,7 @@ class GearEnv(gym.Env):
         """Reset environment with new scenario."""
         super().reset(seed=seed)
         # Generate new scenario
-        scenario = generate_scenario()
+        scenario = generate_scenario(data_dir=self.data_dir)
         
         # Create initial state
         self.state = SystemState(

@@ -126,7 +126,7 @@ def _generate_point_in_poly(boundary_poly: List[Vector2D], margin: float = 10.0)
             if min_dist >= margin:
                 return point
 
-def generate_scenario() -> Dict:
+def generate_scenario(data_dir=None) -> Dict:
     """Generate a random training scenario.
     
     Returns:

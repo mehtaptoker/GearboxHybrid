@@ -163,7 +163,40 @@ def main():
     parser = argparse.ArgumentParser(description='Train gear generation model')
     parser.add_argument('--gpu', type=int, default=None, 
                         help='GPU ID to use (default: None uses CPU)')
+    parser.add_argument('--data-dir', type=str, default='data/intermediate',
+                        help='Directory containing training data')
+    parser.add_argument('--learning-rate', type=float, default=config.LEARNING_RATE,
+                        help='Learning rate for optimizer')
+    parser.add_argument('--batch-size', type=int, default=config.BATCH_SIZE,
+                        help='Batch size for training')
+    parser.add_argument('--total-timesteps', type=int, default=config.TOTAL_TIMESTEPS,
+                        help='Total timesteps for training')
+    parser.add_argument('--gamma', type=float, default=config.GAMMA,
+                        help='Discount factor gamma')
+    parser.add_argument('--epsilon', type=float, default=config.EPSILON,
+                        help='PPO clipping epsilon')
+    parser.add_argument('--max-gears', type=int, default=config.MAX_GEARS,
+                        help='Maximum gears per episode')
+    parser.add_argument('--max-steps', type=int, default=config.MAX_STEPS_PER_EPISODE,
+                        help='Maximum steps per episode')
+    parser.add_argument('--min-teeth', type=int, default=config.MIN_TEETH,
+                        help='Minimum number of teeth per gear')
+    parser.add_argument('--max-teeth', type=int, default=config.MAX_TEETH,
+                        help='Maximum number of teeth per gear')
+    
     args = parser.parse_args()
+    
+    # Set config parameters from command line arguments
+    config.DATA_DIR = args.data_dir
+    config.LEARNING_RATE = args.learning_rate
+    config.BATCH_SIZE = args.batch_size
+    config.TOTAL_TIMESTEPS = args.total_timesteps
+    config.GAMMA = args.gamma
+    config.EPSILON = args.epsilon
+    config.MAX_GEARS = args.max_gears
+    config.MAX_STEPS_PER_EPISODE = args.max_steps
+    config.MIN_TEETH = args.min_teeth
+    config.MAX_TEETH = args.max_teeth
     
     # Set device (GPU if available)
     device = torch.device('cpu')
@@ -174,7 +207,7 @@ def main():
     else:
         print("Using CPU")
     
-    env = GearEnv()
+    env = GearEnv(data_dir=config.DATA_DIR)
     agent = PPOAgent(env, device)
     agent.train(config.TOTAL_TIMESTEPS)
 
