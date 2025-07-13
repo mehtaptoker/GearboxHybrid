@@ -1,0 +1,35 @@
+{
+  "boundary_poly": [
+    {
+      "x": 455.0,
+      "y": 5.0
+    },
+    {
+      "x": 5.0,
+      "y": 100.0
+    },
+    {
+      "x": 4.0,
+      "y": 198.0
+    },
+    {
+      "x": 455.0,
+      "y": 198.0
+    }
+  ],
+  "input_shaft": {
+    "x": 84.0,
+    "y": 151.0
+  },
+  "output_shaft": {
+    "x": 393.0,
+    "y": 108.0
+  },
+  "constraints": {
+    "torque_ratio": "1:2",
+    "mass_space_ratio": 0.7,
+    "boundary_margin": 10.0,
+    "min_gear_size": 15,
+    "max_gear_size": 50
+  }
+}

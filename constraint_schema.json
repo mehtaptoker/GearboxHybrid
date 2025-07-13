@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Gear System Constraints",
+  "type": "object",
+  "properties": {
+    "torque_ratio": {
+      "type": "string",
+      "pattern": "^\\d+:\\d+$",
+      "description": "Target torque ratio (e.g., '1:2')"
+    },
+    "mass_space_ratio": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Mass vs space optimization ratio (0=minimize mass, 1=maximize space usage)"
+    },
+    "boundary_margin": {
+      "type": "number",
+      "minimum": 0,
+      "default": 10.0,
+      "description": "Minimum distance from boundary (mm)"
+    },
+    "min_gear_size": {
+      "type": "number",
+      "minimum": 5,
+      "description": "Minimum gear diameter (mm)"
+    },
+    "max_gear_size": {
+      "type": "number",
+      "minimum": 5,
+      "description": "Maximum gear diameter (mm)"
+    }
+  },
+  "required": ["torque_ratio", "mass_space_ratio"]
+}
