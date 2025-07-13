@@ -2,7 +2,7 @@ import random
 from components import Gear, Vector2D, SystemState
 from data_generator import generate_scenario
 from physics import calculate_gear_train, check_meshing, is_inside_boundary
-from visualization import render
+from visualization import render_system as render
 
 # Generate a mock scenario
 scenario = generate_scenario()
