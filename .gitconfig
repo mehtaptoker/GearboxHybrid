@@ -5,12 +5,8 @@
 	logallrefupdates = true
 	symlinks = false
 	ignorecase = true
-[remote "DataGen"]
-	url = git@github.com:mingwucn/DataGenerator.git
-	fetch = +refs/heads/*:refs/remotes/origin/*
 [remote "origin"]
-	url = git@github.com:mingwucn/ECM_DomainAdaptation.git
-	url = git@gitcode.com:mingwucn/ECM_DomainAdaptation.git
+	url = git@github.com:mingwucn/GearGen.git
 	fetch = +refs/heads/*:refs/remotes/origin/*
 [branch "master"]
 	remote = origin
