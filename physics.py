@@ -88,6 +88,46 @@ def is_inside_boundary(point: Vector2D, boundary_poly: List[Vector2D]) -> bool:
         
     return inside
 
+def is_gear_inside_boundary(gear: Gear, boundary_poly: List[Vector2D]) -> bool:
+    """Check if entire gear is within boundary polygon.
+    
+    Args:
+        gear: Gear to check
+        boundary_poly: List of polygon vertices
+        
+    Returns:
+        True if gear is fully inside boundary, False otherwise
+    """
+    # First check if center is inside
+    if not is_inside_boundary(gear.center, boundary_poly):
+        return False
+        
+    # Check if gear's radius extends beyond boundary
+    # Calculate the distance from center to boundary edges
+    min_distance = float('inf')
+    n = len(boundary_poly)
+    for i in range(n):
+        p1 = boundary_poly[i]
+        p2 = boundary_poly[(i+1) % n]
+        
+        # Calculate distance from center to line segment
+        edge_length = math.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2)
+        if edge_length == 0:
+            distance = math.sqrt((gear.center.x - p1.x)**2 + (gear.center.y - p1.y)**2)
+        else:
+            t = max(0, min(1, ((gear.center.x - p1.x) * (p2.x - p1.x) + 
+                               (gear.center.y - p1.y) * (p2.y - p1.y)) / edge_length**2))
+            projection_x = p1.x + t * (p2.x - p1.x)
+            projection_y = p1.y + t * (p2.y - p1.y)
+            distance = math.sqrt((gear.center.x - projection_x)**2 + 
+                                (gear.center.y - projection_y)**2)
+        
+        if distance < min_distance:
+            min_distance = distance
+            
+    # Gear is fully inside if its radius is less than min distance to boundary
+    return gear.radius <= min_distance
+
 def calculate_gear_train(gears: List[Gear], input_gear_id: int, output_gear_id: int) -> Optional[float]:
     """Calculate gear train ratio between input and output gears.
     
@@ -110,12 +150,12 @@ def calculate_gear_train(gears: List[Gear], input_gear_id: int, output_gear_id: 
                 graph[gear1.id].append(gear2.id)
                 graph[gear2.id].append(gear1.id)
     
-    # BFS setup
-    queue = deque([(input_gear_id, 1.0)])
+    # BFS setup with cycle detection
+    queue = deque([(input_gear_id, 1.0, [])])  # Add path tracking
     visited = set([input_gear_id])
     
     while queue:
-        current_id, current_ratio = queue.popleft()
+        current_id, current_ratio, path = queue.popleft()
         
         # Found output gear
         if current_id == output_gear_id:
@@ -124,10 +164,16 @@ def calculate_gear_train(gears: List[Gear], input_gear_id: int, output_gear_id: 
         # Visit neighbors
         for neighbor_id in graph[current_id]:
             if neighbor_id not in visited:
+                # Check for cycles in the current path
+                if neighbor_id in path:
+                    continue  # Skip this neighbor to avoid cycles
+                
                 visited.add(neighbor_id)
                 # Calculate new ratio: ratio * (current_teeth / neighbor_teeth)
                 new_ratio = current_ratio * (gear_map[current_id].num_teeth / gear_map[neighbor_id].num_teeth)
-                queue.append((neighbor_id, new_ratio))
+                # Create new path with current node
+                new_path = path + [current_id]
+                queue.append((neighbor_id, new_ratio, new_path))
     
     # No path found
     return None

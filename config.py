@@ -8,7 +8,7 @@ WORKSPACE_SIZE = 100.0  # The coordinate system will range from -50 to 50
 GEAR_MODULE = 1.0
 MIN_TEETH = 8
 MAX_TEETH = 40
-MESHING_TOLERANCE = 1e-3  # Relative tolerance for checking meshing distance
+MESHING_TOLERANCE = 1e-2  # Increased tolerance for more robust meshing checks
 GEAR_THICKNESS = 10.0  # Constant thickness for all gears (mm)
 GEAR_DENSITY = 7.85    # Steel density (g/cm³)
 

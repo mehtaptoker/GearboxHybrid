@@ -6,7 +6,7 @@ import math
 import config
 from components import SystemState, Gear, Vector2D
 from data_generator import generate_scenario
-from physics import check_collision, is_inside_boundary, calculate_gear_train
+from physics import check_collision, is_inside_boundary, calculate_gear_train, is_gear_inside_boundary
 from reward import calculate_reward
 
 class GearEnv(gym.Env):
@@ -148,7 +148,7 @@ class GearEnv(gym.Env):
         if check_collision(new_gear, self.state.gears):
             reward = config.P_COLLISION
             terminated = True
-        elif not is_inside_boundary(new_gear.center, self.state.boundary_poly):
+        elif not is_gear_inside_boundary(new_gear, self.state.boundary_poly):
             reward = config.P_OUT_OF_BOUNDS
             terminated = True
         else:
