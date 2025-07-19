@@ -142,7 +142,8 @@ class PPOAgent:
                 self.update()
             
             if done:
-                print(f"Step: {t}, Episode Reward: {episode_reward}, Length: {episode_length}")
+                gear_count = len(self.env.state.gears)
+                print(f"Step: {t}, Episode Reward: {episode_reward:.2f}, Length: {episode_length}, Gears: {gear_count}")
                 state, _ = self.env.reset()
                 episode_reward = 0
                 episode_length = 0
@@ -157,8 +158,8 @@ def main():
     parser = argparse.ArgumentParser(description='Train gear generation model')
     parser.add_argument('--gpu', type=int, default=None, 
                         help='GPU ID to use (default: None uses CPU)')
-    parser.add_argument('--data-dir', type=str, default='data/intermediate',
-                        help='Directory containing training data')
+    parser.add_argument('--data-dir', type=str, default=None,
+                        help='Directory containing training data. If not provided, new data will be generated.')
     parser.add_argument('--learning-rate', type=float, default=config.LEARNING_RATE,
                         help='Learning rate for optimizer')
     parser.add_argument('--batch-size', type=int, default=config.BATCH_SIZE,
@@ -179,6 +180,8 @@ def main():
                         help='Maximum number of teeth per gear')
     parser.add_argument('--verbose', type=int, default=0,
                         help='Verbosity level (0: none, 1: basic, 2: detailed)')
+    parser.add_argument('--model-path', type=str, default=None,
+                        help='Path to a pre-trained model to continue training from')
     
     args = parser.parse_args()
     
@@ -205,6 +208,16 @@ def main():
     
     env = GearEnv(data_dir=config.DATA_DIR, verbose=args.verbose)
     agent = PPOAgent(env, device)
+
+    # Load pre-trained model if provided
+    if args.model_path and os.path.exists(args.model_path):
+        print(f"Loading pre-trained model from {args.model_path}")
+        agent.policy.load_state_dict(torch.load(args.model_path, map_location=device))
+        # If you also save the value network, load it here
+        # agent.value_net.load_state_dict(torch.load(value_model_path, map_location=device))
+    else:
+        print("No pre-trained model found, starting from scratch.")
+
     agent.train(config.TOTAL_TIMESTEPS)
 
 if __name__ == "__main__":

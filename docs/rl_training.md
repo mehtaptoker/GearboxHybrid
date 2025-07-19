@@ -61,6 +61,8 @@ The reward function is designed to guide the agent towards a valid and efficient
         agent.store_transition(state, action, reward, next_state, done)
         agent.update()
    ```
+   
+   During training, the console will output the `Episode Reward` and `Length` for each completed episode. The `Length` refers to the number of steps the agent took in that episode before it ended. An episode can end due to either **termination** (e.g., a collision) or **truncation** (reaching the maximum number of steps).
 
 ## PPO Agent
 ```python

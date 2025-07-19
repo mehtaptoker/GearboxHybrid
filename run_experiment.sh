@@ -8,6 +8,7 @@ REPORT_DIR="reports/$(date +%Y%m%d_%H%M%S)"
 MODEL_PATH="models/best_policy.pth"
 
 # Parse command line arguments
+USE_GENERATED_DATA=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --verbose=*)
@@ -20,6 +21,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --total-timesteps=*)
       TOTAL_TIMESTEPS="${1#*=}"
+      shift
+      ;;
+    --use-generated-data)
+      USE_GENERATED_DATA=1
       shift
       ;;
     *)
@@ -43,6 +48,11 @@ MAX_TEETH=60
 # Create directories
 mkdir -p "$REPORT_DIR"
 mkdir -p models
+mkdir -p logs
+
+# Log file
+LOG_FILE="logs/experiment_$(date +%Y%m%d_%H%M%S).log"
+exec &> >(tee -a "$LOG_FILE")
 
 # Train the model
 echo "Starting training with GPU $GPU_ID..."
@@ -57,8 +67,17 @@ echo "  MAX_STEPS: $MAX_STEPS"
 echo "  MIN_TEETH: $MIN_TEETH"
 echo "  MAX_TEETH: $MAX_TEETH"
 
-python train_torch.py \
-    --data-dir "$DATA_DIR" \
+# Check if a pre-trained model exists
+if [ -f "$MODEL_PATH" ]; then
+    echo "Found pre-trained model at $MODEL_PATH, continuing training."
+    MODEL_ARG="--model-path $MODEL_PATH"
+else
+    echo "No pre-trained model found, starting from scratch."
+    MODEL_ARG=""
+fi
+
+# Build training command
+TRAIN_CMD="python train_torch.py \
     --gpu $GPU_ID \
     --learning-rate $LEARNING_RATE \
     --batch-size $BATCH_SIZE \
@@ -69,7 +88,14 @@ python train_torch.py \
     --max-steps $MAX_STEPS \
     --min-teeth $MIN_TEETH \
     --max-teeth $MAX_TEETH \
-    --verbose $VERBOSE
+    --verbose $VERBOSE \
+    $MODEL_ARG"
+
+if [ "$USE_GENERATED_DATA" -eq 0 ]; then
+    TRAIN_CMD="$TRAIN_CMD --data-dir $DATA_DIR"
+fi
+
+eval $TRAIN_CMD
 
 # Move best model
 mv gear_generator_policy.pth "$MODEL_PATH"
