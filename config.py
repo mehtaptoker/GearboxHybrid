@@ -28,4 +28,4 @@ WEIGHT_PENALTY = -0.01  # Penalty per gram of total gear mass
 P_OUT_OF_BOUNDS = -10.0
 P_NO_CONNECTION = -20.0  # Penalty if the final train doesn't connect I/O
 P_EFFICIENCY = -0.1
-P_GEAR_COUNT_PENALTY = -0.5 # Penalty for each gear added to the system
+P_GEAR_COUNT_PENALTY = -0.1 # Penalty for each gear added to the system

@@ -6,9 +6,20 @@ DATA_DIR="data/intermediate"
 GPU_ID=0  # Set to -1 for CPU
 REPORT_DIR="reports/$(date +%Y%m%d_%H%M%S)"
 MODEL_PATH="models/best_policy.pth"
+USE_GENERATED_DATA=0
+
+# Hyperparameters
+LEARNING_RATE=0.001
+BATCH_SIZE=64
+TOTAL_TIMESTEPS=1000000
+GAMMA=0.99
+EPSILON=0.2
+MAX_GEARS=10
+MAX_STEPS=50
+MIN_TEETH=8
+MAX_TEETH=60
 
 # Parse command line arguments
-USE_GENERATED_DATA=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --verbose=*)
@@ -33,17 +44,6 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
-
-# Hyperparameters
-LEARNING_RATE=0.001
-BATCH_SIZE=64
-TOTAL_TIMESTEPS=10
-GAMMA=0.99
-EPSILON=0.2
-MAX_GEARS=10
-MAX_STEPS=50
-MIN_TEETH=8
-MAX_TEETH=60
 
 # Create directories
 mkdir -p "$REPORT_DIR"

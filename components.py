@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List
+import math
+import config
 
 @dataclass
 class Vector2D:
@@ -101,3 +103,10 @@ class SystemState:
         if input_gear and output_gear:
             return input_gear.num_teeth / output_gear.num_teeth
         return 0.0
+        
+    def is_connected(self, gear1: Gear, gear2: Gear) -> bool:
+        """Check if two gears are connected (meshed)"""
+        dist = math.sqrt((gear1.center.x - gear2.center.x)**2 + 
+                         (gear1.center.y - gear2.center.y)**2)
+        expected_dist = gear1.radius + gear2.radius
+        return abs(dist - expected_dist) < config.GEAR_MODULE * 0.5  # 50% tolerance for practical purposes

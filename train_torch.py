@@ -141,12 +141,12 @@ class PPOAgent:
             if t % config.BATCH_SIZE == 0 and t > 0:
                 self.update()
             
-            if done:
-                gear_count = len(self.env.state.gears)
-                print(f"Step: {t}, Episode Reward: {episode_reward:.2f}, Length: {episode_length}, Gears: {gear_count}")
-                state, _ = self.env.reset()
-                episode_reward = 0
-                episode_length = 0
+        if done:
+            gear_count = len(self.env.state.gears)
+            print(f"Step: {t}, Episode Reward: {episode_reward:.2f}, Length: {episode_length}, Gears: {gear_count} (Episode Gear Count)")
+            state, _ = self.env.reset()
+            episode_reward = 0
+            episode_length = 0
                 
         # Save model
         torch.save(self.policy.state_dict(), "gear_generator_policy.pth")

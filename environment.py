@@ -188,32 +188,151 @@ class GearEnv(gym.Env):
         # Create and add input gear
         input_gear = Gear(
             id=1,
-            center=Vector2D(self.state.input_shaft.x, self.state.input_shaft.y),
+            center=self.state.input_shaft,
             num_teeth=random.randint(config.MIN_TEETH, config.MAX_TEETH),
             module=config.GEAR_MODULE,
             z_layer=0,
             is_driver=True
         )
-        self.state.gears.append(input_gear)
         
         # Create and add output gear
         output_gear = Gear(
             id=2,
-            center=Vector2D(self.state.output_shaft.x, self.state.output_shaft.y),
+            center=self.state.output_shaft,
             num_teeth=random.randint(config.MIN_TEETH, config.MAX_TEETH),
             module=config.GEAR_MODULE,
             z_layer=0,
             is_driver=False
         )
-        self.state.gears.append(output_gear)
+
+        # Calculate distance between input and output shafts
+        dist_center = math.sqrt(
+            (output_gear.center.x - input_gear.center.x)**2 +
+            (output_gear.center.y - input_gear.center.y)**2
+        )
         
-        # Set initial gear train ratio
-        self.initial_ratio = input_gear.num_teeth / output_gear.num_teeth
+        # Try to add intermediate gear with timeout
+        intermediate_placed = False
+        start_time = time.time()
+        timeout = 0.5  # 0.5 second timeout
+        
+        # Calculate possible intermediate teeth range
+        min_inter_teeth = max(config.MIN_TEETH, 
+                             int((dist_center - input_gear.radius - output_gear.radius) / config.GEAR_MODULE))
+        max_inter_teeth = min(config.MAX_TEETH, 
+                             int(dist_center / config.GEAR_MODULE))
+        
+        if min_inter_teeth <= max_inter_teeth:
+            # Try teeth counts from largest to smallest (more likely to mesh)
+            teeth_options = list(range(max_inter_teeth, min_inter_teeth-1, -1))
+            for num_teeth_intermediate in teeth_options[:10]:  # Limit to 10 attempts
+                # Check timeout
+                if time.time() - start_time > timeout:
+                    if self.verbose:
+                        print("TIMEOUT: Intermediate gear placement took too long")
+                    break
+                
+                # Calculate possible positions
+                positions = self._calculate_intermediate_positions(input_gear, output_gear, num_teeth_intermediate)
+                
+                for position in positions:
+                    intermediate_gear = Gear(
+                        id=3,
+                        center=position,
+                        num_teeth=num_teeth_intermediate,
+                        module=config.GEAR_MODULE,
+                        z_layer=0,
+                        is_driver=False
+                    )
+                    
+                    # Check placement validity
+                    boundary_ok = is_gear_inside_boundary(intermediate_gear, self.state.boundary_poly)
+                    collision_ok = not check_collision(intermediate_gear, [input_gear, output_gear])
+                    meshing_ok = self._check_gear_meshing(input_gear, intermediate_gear) and \
+                                 self._check_gear_meshing(intermediate_gear, output_gear)
+                    
+                    if boundary_ok and collision_ok and meshing_ok:
+                        self.state.gears.extend([input_gear, output_gear, intermediate_gear])
+                        intermediate_placed = True
+                        if self.verbose:
+                            print(f"SUCCESS: Intermediate gear placed with {num_teeth_intermediate} teeth")
+                        break  # Break out of position loop
+                if intermediate_placed:
+                    break  # Break out of teeth loop
+        
+        if not intermediate_placed:
+            self.state.gears.extend([input_gear, output_gear])
+            if self.verbose:
+                print("WARNING: Intermediate gear placement failed after all attempts")
+        
+        # Calculate actual gear train ratio
+        if len(self.state.gears) == 3:
+            # With intermediate: ratio = (driver/driven) = (input/intermediate) * (intermediate/output)
+            input_gear = self.state.gears[0]
+            intermediate_gear = self.state.gears[1]
+            output_gear = self.state.gears[2]
+            self.initial_ratio = (input_gear.num_teeth / intermediate_gear.num_teeth) * \
+                                 (intermediate_gear.num_teeth / output_gear.num_teeth)
+        else:
+            # Direct connection
+            self.initial_ratio = input_gear.num_teeth / output_gear.num_teeth
         
         # Reset step counter
         self.step_count = 0
         
         return self._get_observation(), {}
+    
+    def _calculate_intermediate_positions(self, gear1, gear2, intermediate_teeth):
+        """Calculate possible positions for intermediate gear between two gears using circle-circle intersection."""
+        P0 = gear1.center
+        P1 = gear2.center
+        d = math.sqrt((P1.x - P0.x)**2 + (P1.y - P0.y)**2)
+        
+        # Radii for meshing circles: distance from gear1 to intermediate
+        r0 = gear1.radius + (intermediate_teeth * config.GEAR_MODULE / 2)
+        # Distance from gear2 to intermediate
+        r1 = gear2.radius + (intermediate_teeth * config.GEAR_MODULE / 2)
+        
+        # But note: the distance between the two existing gears is d
+        # We actually need the distance from gear1 to intermediate (r0) and from gear2 to intermediate (r1)
+        # The circles we're intersecting are centered at gear1 and gear2 with radii r0 and r1 respectively
+        
+        # Check if solution is possible with tolerance for floating point precision
+        tolerance = 1e-5
+        if d > (r0 + r1) + tolerance:
+            return []  # Too far apart
+        if d < abs(r0 - r1) - tolerance:
+            return []  # One circle inside the other
+        
+        # Calculate intermediate point
+        a = (r0**2 - r1**2 + d**2) / (2 * d)
+        
+        # Prevent math domain error
+        h_sq = r0**2 - a**2
+        if h_sq < 0:
+            return []
+        
+        h = math.sqrt(h_sq)
+        
+        # Calculate P2 point (base point on the line between P0 and P1)
+        P2 = Vector2D(
+            P0.x + a * (P1.x - P0.x) / d,
+            P0.y + a * (P1.y - P0.y) / d
+        )
+        
+        # Calculate possible positions (perpendicular to the line)
+        positions = [
+            Vector2D(
+                P2.x + h * (P1.y - P0.y) / d,
+                P2.y - h * (P1.x - P0.x) / d
+            ),
+            Vector2D(
+                P2.x - h * (P1.y - P0.y) / d,
+                P2.y + h * (P1.x - P0.x) / d
+            )
+        ]
+        
+        return positions
 
     def step(self, action: np.ndarray) -> tuple:
         """Process agent action and update environment state."""
@@ -310,23 +429,21 @@ class GearEnv(gym.Env):
                 terminated = False
                 reward = 0.1  # Small reward for successful modification
                 
-        # Initialize reward components
-        dist_reward = 0.0
-        final_reward = 0.0
-        
-        # Check truncation conditions
-        if len(self.state.gears) >= config.MAX_GEARS or self.step_count >= config.MAX_STEPS_PER_EPISODE:
-            truncated = True
-                
-            if self.verbose >= 2:
-                print("Current gears:")
-                for gear in self.state.gears:
-                    print(f"  Gear {gear.id}: center=({gear.center.x:.2f}, {gear.center.y:.2f}), "
-                          f"teeth={gear.num_teeth}, z_layer={gear.z_layer}")
+        # Only calculate reward if not terminated
+        if not terminated:
+            # Check truncation conditions
+            if len(self.state.gears) >= config.MAX_GEARS or self.step_count >= config.MAX_STEPS_PER_EPISODE:
+                truncated = True
+                    
+                if self.verbose >= 2:
+                    print("Current gears:")
+                    for gear in self.state.gears:
+                        print(f"  Gear {gear.id}: center=({gear.center.x:.2f}, {gear.center.y:.2f}), "
+                              f"teeth={gear.num_teeth}, z_layer={gear.z_layer}")
             
-        # Calculate reward
-        success = self._is_successful_connection()
-        reward = calculate_reward(self.state, success)
+            # Calculate reward only if not terminated
+            success = self._is_successful_connection()
+            reward = calculate_reward(self.state, success)
         
         end_time = time.time()
         step_duration = end_time - start_time
@@ -335,8 +452,23 @@ class GearEnv(gym.Env):
         
         return self._get_observation(), reward, terminated, truncated, info
 
+    def _check_gear_meshing(self, gear1: Gear, gear2: Gear) -> bool:
+        """Check if two gears are properly meshing."""
+        dist = math.sqrt((gear1.center.x - gear2.center.x)**2 + 
+                         (gear1.center.y - gear2.center.y)**2)
+        expected_dist = gear1.radius + gear2.radius
+        return abs(dist - expected_dist) < config.GEAR_MODULE * 0.2  # Allow 20% tolerance
+    
     def _is_successful_connection(self) -> bool:
         """Check if the gear train connects the input and output shafts."""
-        # For now, we'll consider a connection successful if there are at least 3 gears
-        # This is a placeholder for a more complex graph traversal algorithm
-        return len(self.state.gears) >= 3
+        if len(self.state.gears) < 2:
+            return False
+            
+        # Check that all adjacent gears are meshing
+        gears = self.state.gears
+        for i in range(len(gears) - 1):
+            if not self._check_gear_meshing(gears[i], gears[i+1]):
+                return False
+                
+        # Check that input is connected to output through the chain
+        return True

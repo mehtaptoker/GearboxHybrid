@@ -30,12 +30,34 @@ def calculate_reward(state: SystemState, success: bool) -> float:
     
     # Penalty for the number of gears to encourage efficiency
     P_efficiency = len(state.gears) * config.P_GEAR_COUNT_PENALTY
+    
+    # Intermediate gear bonus - reward for gears that connect input to output
+    R_intermediate = 0.0
+    if input_gear and output_gear:
+        # Count gears that are connected to both input and output
+        intermediate_gears = [g for g in state.gears if g != input_gear and g != output_gear]
+        for gear in intermediate_gears:
+            if (state.is_connected(input_gear, gear) and 
+                state.is_connected(gear, output_gear)):
+                R_intermediate += 15.0  # Bonus for each intermediate gear that connects input to output
 
     # Bonus for a successful connection
     if success:
-        R_connection = 10.0
+        R_connection = 100.0  # Increased bonus for successful connection
+        
+    # Additional reward for each meshing gear pair
+    meshing_pairs = 0
+    for i in range(len(state.gears)):
+        for j in range(i+1, len(state.gears)):
+            dist = math.sqrt((state.gears[i].center.x - state.gears[j].center.x)**2 + 
+                             (state.gears[i].center.y - state.gears[j].center.y)**2)
+            expected_dist = state.gears[i].radius + state.gears[j].radius
+            if abs(dist - expected_dist) < config.GEAR_MODULE * 0.2:  # 20% tolerance
+                meshing_pairs += 1
+                
+    R_meshing = meshing_pairs * 10.0  # Increased reward for each meshing pair
     
     # Total reward calculation
-    total_reward = R_ratio + P_efficiency + R_connection
+    total_reward = R_ratio + P_efficiency + R_connection + R_meshing + R_intermediate
     
     return total_reward
