@@ -1,0 +1,56 @@
+{
+  "timestamp": "20250719_133525",
+  "input_shaft": {
+    "x": 91.0,
+    "y": 121.0
+  },
+  "output_shaft": {
+    "x": 384.0,
+    "y": 101.0
+  },
+  "target_ratio": 0.5,
+  "boundary_points": [
+    {
+      "x": 4.0,
+      "y": 4.0
+    },
+    {
+      "x": 4.0,
+      "y": 198.0
+    },
+    {
+      "x": 455.0,
+      "y": 198.0
+    },
+    {
+      "x": 455.0,
+      "y": 4.0
+    }
+  ],
+  "total_mass": 120.90301517615809,
+  "num_gears": 2,
+  "driver_gears": 1,
+  "driven_gears": 1,
+  "gears": [
+    {
+      "id": 1,
+      "x": 91.0,
+      "y": 121.0,
+      "num_teeth": 19,
+      "module": 1.0,
+      "z_layer": 0,
+      "is_driver": true,
+      "mass": 22.257005853438585
+    },
+    {
+      "id": 2,
+      "x": 384.0,
+      "y": 101.0,
+      "num_teeth": 40,
+      "module": 1.0,
+      "z_layer": 0,
+      "is_driver": false,
+      "mass": 98.64600932271951
+    }
+  ]
+}

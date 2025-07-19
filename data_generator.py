@@ -115,7 +115,8 @@ def _generate_point_in_poly(boundary_poly: List[Vector2D], margin: float = 10.0)
     max_y = max(v.y for v in boundary_poly) - margin
     
     # Generate points until one is inside with margin
-    while True:
+    max_attempts = 1000
+    for _ in range(max_attempts):
         x = random.uniform(min_x, max_x)
         y = random.uniform(min_y, max_y)
         point = Vector2D(x, y)
@@ -125,6 +126,11 @@ def _generate_point_in_poly(boundary_poly: List[Vector2D], margin: float = 10.0)
             min_dist = min(math.sqrt((point.x - v.x)**2 + (point.y - v.y)**2) for v in boundary_poly)
             if min_dist >= margin:
                 return point
+
+    # Fallback to centroid if no point is found
+    centroid_x = sum(v.x for v in boundary_poly) / len(boundary_poly)
+    centroid_y = sum(v.y for v in boundary_poly) / len(boundary_poly)
+    return Vector2D(centroid_x, centroid_y)
 
 def generate_scenario(data_dir=None) -> Dict:
     """Generate a random training scenario.
@@ -145,8 +151,14 @@ def generate_scenario(data_dir=None) -> Dict:
     output_shaft = _generate_point_in_poly(boundary_poly, margin=10.0)
     
     # Ensure shafts are sufficiently apart
-    while math.sqrt((input_shaft.x - output_shaft.x)**2 + (input_shaft.y - output_shaft.y)**2) < config.WORKSPACE_SIZE/10:
-        output_shaft = _generate_point_in_poly(boundary_poly)
+    max_attempts = 100
+    for _ in range(max_attempts):
+        if math.sqrt((input_shaft.x - output_shaft.x)**2 + (input_shaft.y - output_shaft.y)**2) >= config.WORKSPACE_SIZE/10:
+            break
+        output_shaft = _generate_point_in_poly(boundary_poly, margin=10.0)
+    else:
+        # If we can't find a suitable point, regenerate the entire scenario
+        return generate_scenario(data_dir)
     
     # Generate target ratio and constraints
     torque_n = random.randint(1, 5)

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 @dataclass
@@ -27,6 +27,7 @@ class Gear:
     pressure_angle: float = 20.0  # Default pressure angle in degrees
     z_layer: int = 0
     is_driver: bool = False
+    connected_gears: List[int] = field(default_factory=list)
 
     @property
     def reference_diameter(self) -> float:
@@ -92,3 +93,11 @@ class SystemState:
     input_shaft: Vector2D
     output_shaft: Vector2D
     target_ratio: float
+
+    def calculate_ratio(self) -> float:
+        """Calculate the gear ratio of the system."""
+        input_gear = next((g for g in self.gears if g.is_driver), None)
+        output_gear = next((g for g in self.gears if not g.is_driver), None)
+        if input_gear and output_gear:
+            return input_gear.num_teeth / output_gear.num_teeth
+        return 0.0

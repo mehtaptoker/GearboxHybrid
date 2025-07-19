@@ -47,6 +47,21 @@ We use four standardized test cases:
 3. **Constrained Reversal**: 1:1 reversal in L-shaped boundary
 4. **Layered Solution**: Systems requiring different z-layers for shaft crossings
 
+## Gear Generation Process
+Our system uses a two-step approach for generating gears:
+
+1. **Geometric Placement**: 
+   - Determines reference diameter and positions
+   - Ensures gears fit within boundaries and avoid collisions
+   - Uses reinforcement learning to optimize placement
+
+2. **Teeth Assignment**:
+   - Assigns teeth count based on desired gear ratios
+   - Ensures meshing compatibility between gears
+   - Optimizes for efficiency and manufacturability
+
+This decoupled approach allows for more efficient exploration of valid gear configurations.
+
 ## Explainability
 The system provides detailed reward contribution reports:
 ```

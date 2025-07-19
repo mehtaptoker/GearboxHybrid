@@ -25,10 +25,11 @@ radius = (module * num_teeth) / 2
 speed_B / speed_A = num_teeth_A / num_teeth_B
 ```
 
-### 3. Torque Ratio
+### 3. Torque Ratio Approximation
 ```
-torque_B / torque_A = num_teeth_B / num_teeth_A
+torque_B / torque_A ≈ diameter_B / diameter_A = num_teeth_B / num_teeth_A
 ```
+We approximate the torque ratio using the reference diameter ratio, which is equivalent to the teeth ratio since all gears share the same module.
 
 ### 4. Non-Intersection
 - No gear can intersect another on the same z-layer
@@ -49,6 +50,21 @@ Constraints are defined in JSON:
   "max_gears": 10
 }
 ```
+
+## Two-Step Gear Generation
+Our system uses a two-step approach for generating gears:
+
+1. **Geometric Placement**: 
+   - Determines reference diameter and positions
+   - Ensures gears fit within boundaries and avoid collisions
+   - Optimizes placement using reinforcement learning
+
+2. **Teeth Assignment**:
+   - Assigns teeth count based on desired gear ratios
+   - Ensures meshing compatibility between gears
+   - Optimizes for efficiency and manufacturability
+
+This decoupled approach allows for more efficient exploration of valid gear configurations.
 
 ## Physics Validation
 Key validation functions:

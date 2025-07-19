@@ -30,15 +30,17 @@ def check_meshing(gear1: Gear, gear2: Gear) -> bool:
     # Check if distance matches sum of radii within tolerance
     return math.isclose(distance, sum_radii, rel_tol=config.MESHING_TOLERANCE)
 
-def check_collision(new_gear: Gear, existing_gears: List[Gear]) -> bool:
+def check_collision(new_gear: Gear, existing_gears: List[Gear], return_reason=False) -> bool:
     """Check if new gear collides with existing gears.
     
     Args:
         new_gear: Gear to check
         existing_gears: List of existing gears
+        return_reason: If True, returns (result, reason) tuple
         
     Returns:
         True if collision detected, False otherwise
+        If return_reason=True, returns (bool, str) tuple
     """
     for gear in existing_gears:
         # Only check gears on same z-layer
@@ -55,12 +57,16 @@ def check_collision(new_gear: Gear, existing_gears: List[Gear]) -> bool:
         
         # Collision if distance < sum of radii (not equal, as that would be meshing)
         if distance < sum_radii and not math.isclose(distance, sum_radii):
-            return True
+            reason = f"Collision with gear {gear.id} (distance={distance:.2f} < sum_radii={sum_radii:.2f})"
+            return (True, reason) if return_reason else True
             
-    return False
+    return (False, "") if return_reason else False
+
+from shapely.geometry import Point, Polygon
+from shapely.geometry.polygon import orient
 
 def is_inside_boundary(point: Vector2D, boundary_poly: List[Vector2D]) -> bool:
-    """Check if point is inside boundary polygon using ray casting algorithm.
+    """Check if point is inside boundary polygon using shapely.
     
     Args:
         point: Point to check
@@ -69,114 +75,81 @@ def is_inside_boundary(point: Vector2D, boundary_poly: List[Vector2D]) -> bool:
     Returns:
         True if point is inside polygon, False otherwise
     """
-    n = len(boundary_poly)
-    inside = False
-    
-    # Start from last vertex
-    p1 = boundary_poly[0]
-    
-    for i in range(n + 1):
-        p2 = boundary_poly[i % n]
-        if point.y > min(p1.y, p2.y):
-            if point.y <= max(p1.y, p2.y):
-                if point.x <= max(p1.x, p2.x):
-                    if p1.y != p2.y:
-                        x_intersect = (point.y - p1.y) * (p2.x - p1.x) / (p2.y - p1.y) + p1.x
-                    if p1.x == p2.x or point.x <= x_intersect:
-                        inside = not inside
-        p1 = p2
-        
-    return inside
+    # Convert boundary to shapely polygon and ensure correct orientation
+    poly_coords = [(v.x, v.y) for v in boundary_poly]
+    polygon = orient(Polygon(poly_coords))
+    p = Point(point.x, point.y)
+    return polygon.contains(p)
 
-def is_gear_inside_boundary(gear: Gear, boundary_poly: List[Vector2D]) -> bool:
-    """Check if entire gear is within boundary polygon.
+def is_gear_inside_boundary(gear: Gear, boundary_poly: List[Vector2D], return_reason=False) -> bool:
+    """Check if entire gear is within boundary polygon using shapely.
     
     Args:
         gear: Gear to check
         boundary_poly: List of polygon vertices
+        return_reason: If True, returns (result, reason) tuple
         
     Returns:
         True if gear is fully inside boundary, False otherwise
+        If return_reason=True, returns (bool, str) tuple
     """
+    # Convert boundary to shapely polygon and ensure correct orientation
+    poly_coords = [(v.x, v.y) for v in boundary_poly]
+    polygon = orient(Polygon(poly_coords))
+    
+    # Create a circle representing the gear with higher resolution
+    gear_circle = Point(gear.center.x, gear.center.y).buffer(gear.radius, resolution=32)
+    
+    # Check if the gear circle is fully contained within the boundary polygon
+    if polygon.covers(gear_circle):
+        return (True, "") if return_reason else True
+        
+    # If not contained, provide detailed reason
     # First check if center is inside
-    if not is_inside_boundary(gear.center, boundary_poly):
-        return False
+    center_point = Point(gear.center.x, gear.center.y)
+    if not polygon.contains(center_point):
+        reason = f"Gear center ({gear.center.x:.2f}, {gear.center.y:.2f}) is outside boundary"
+        return (False, reason) if return_reason else False
         
-    # Check if gear's radius extends beyond boundary
-    # Calculate the distance from center to boundary edges
-    min_distance = float('inf')
-    n = len(boundary_poly)
-    for i in range(n):
-        p1 = boundary_poly[i]
-        p2 = boundary_poly[(i+1) % n]
+    # Calculate minimum distance from center to boundary
+    min_distance = polygon.boundary.distance(center_point)
+    
+    # If min_distance < gear radius, gear extends beyond boundary
+    if min_distance < gear.radius:
+        reason = f"Gear extends beyond boundary (min_distance={min_distance:.2f} < radius={gear.radius:.2f})"
+        return (False, reason) if return_reason else False
         
-        # Calculate distance from center to line segment
-        edge_length = math.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2)
-        if edge_length == 0:
-            distance = math.sqrt((gear.center.x - p1.x)**2 + (gear.center.y - p1.y)**2)
-        else:
-            t = max(0, min(1, ((gear.center.x - p1.x) * (p2.x - p1.x) + 
-                               (gear.center.y - p1.y) * (p2.y - p1.y)) / edge_length**2))
-            projection_x = p1.x + t * (p2.x - p1.x)
-            projection_y = p1.y + t * (p2.y - p1.y)
-            distance = math.sqrt((gear.center.x - projection_x)**2 + 
-                                (gear.center.y - projection_y)**2)
+    # Check multiple points around the circumference for more accuracy
+    angles = [0, 45, 90, 135, 180, 225, 270, 315]  # Check 8 points
+    for angle in angles:
+        rad = math.radians(angle)
+        x = gear.center.x + gear.radius * math.cos(rad)
+        y = gear.center.y + gear.radius * math.sin(rad)
+        point = Point(x, y)
         
-        if distance < min_distance:
-            min_distance = distance
+        if not polygon.contains(point):
+            # Calculate distance to boundary for more detailed error
+            distance_to_boundary = polygon.boundary.distance(point)
+            reason = (f"Gear edge point at ({x:.2f}, {y:.2f}) is outside boundary "
+                      f"(distance={distance_to_boundary:.5f})")
+            return (False, reason) if return_reason else False
             
-    # Gear is fully inside if its radius is less than min distance to boundary
-    return gear.radius <= min_distance
+    return (True, "") if return_reason else True
 
-def calculate_gear_train(gears: List[Gear], input_gear_id: int, output_gear_id: int) -> Optional[float]:
+def calculate_gear_train_ratio(input_gear: Gear, output_gear: Gear) -> float:
     """Calculate gear train ratio between input and output gears.
     
+    This implementation uses the approximation that the torque ratio is equal to the 
+    ratio of the number of teeth on the output gear to the number of teeth on the input gear.
+    
     Args:
-        gears: List of all gears
-        input_gear_id: ID of input gear
-        output_gear_id: ID of output gear
+        input_gear: Input gear
+        output_gear: Output gear
         
     Returns:
-        Gear ratio if path exists, None otherwise
+        Approximate gear ratio (output_teeth / input_teeth)
     """
-    # Build adjacency list
-    graph: Dict[int, List[int]] = {gear.id: [] for gear in gears}
-    gear_map = {gear.id: gear for gear in gears}
-    
-    # Add edges for meshing gears
-    for i, gear1 in enumerate(gears):
-        for gear2 in gears[i+1:]:
-            if check_meshing(gear1, gear2):
-                graph[gear1.id].append(gear2.id)
-                graph[gear2.id].append(gear1.id)
-    
-    # BFS setup with cycle detection
-    queue = deque([(input_gear_id, 1.0, [])])  # Add path tracking
-    visited = set([input_gear_id])
-    
-    while queue:
-        current_id, current_ratio, path = queue.popleft()
-        
-        # Found output gear
-        if current_id == output_gear_id:
-            return current_ratio
-        
-        # Visit neighbors
-        for neighbor_id in graph[current_id]:
-            if neighbor_id not in visited:
-                # Check for cycles in the current path
-                if neighbor_id in path:
-                    continue  # Skip this neighbor to avoid cycles
-                
-                visited.add(neighbor_id)
-                # Calculate new ratio: ratio * (current_teeth / neighbor_teeth)
-                new_ratio = current_ratio * (gear_map[current_id].num_teeth / gear_map[neighbor_id].num_teeth)
-                # Create new path with current node
-                new_path = path + [current_id]
-                queue.append((neighbor_id, new_ratio, new_path))
-    
-    # No path found
-    return None
+    return output_gear.num_teeth / input_gear.num_teeth
 
 def validate_gear(gear: Gear) -> bool:
     """Validate gear parameters for physical sensibility.

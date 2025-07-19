@@ -26,3 +26,18 @@ graph TD
 - **Constraint System**: Enforces torque ratios, boundary margins, and gear size limits
 - **Normalization**: All geometries scaled to fit within 100×100 workspace
 - **Reinforcement Learning**: Proximal Policy Optimization (PPO) agent learns optimal gear placement
+
+## Gear Generation Process
+Our system uses a two-step approach for generating gears:
+
+1. **Geometric Placement**: 
+   - Determines reference diameter and positions
+   - Ensures gears fit within boundaries and avoid collisions
+   - Uses reinforcement learning to optimize placement
+
+2. **Teeth Assignment**:
+   - Assigns teeth count based on desired gear ratios
+   - Ensures meshing compatibility between gears
+   - Optimizes for efficiency and manufacturability
+
+This decoupled approach allows for more efficient exploration of valid gear configurations.

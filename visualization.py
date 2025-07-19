@@ -157,7 +157,8 @@ def render_gear_detail(gear: Gear, save_path: str = None):
     ]
     
     for diameter, color, label in diameters:
-        ax.plot([-diameter/2, diameter/2], [0, 0], color=color, linestyle='-', 
+        linestyle = 'solid' if label == 'Reference Diameter' else 'dashed'
+        ax.plot([-diameter/2, diameter/2], [0, 0], color=color, linestyle=linestyle, 
                 linewidth=2, label=label)
     
     # Add gear info
@@ -178,67 +179,6 @@ def render_gear_detail(gear: Gear, save_path: str = None):
     ax.set_aspect('equal')
     ax.set_title(f'Gear {gear.id} Detail')
     ax.legend(loc='upper right')
-    
-    # Save or show
-    if save_path:
-        plt.savefig(save_path)
-    else:
-        plt.show()
-    plt.close()
-    
-    # Draw boundary
-    boundary_points = [(p.x, p.y) for p in state.boundary_poly]
-    boundary_poly = Polygon(boundary_points, closed=True, fill=None, edgecolor='black', linewidth=2)
-    ax.add_patch(boundary_poly)
-    
-    # Draw input and output shafts
-    ax.plot(state.input_shaft.x, state.input_shaft.y, 'go', markersize=10, label='Input')
-    ax.plot(state.output_shaft.x, state.output_shaft.y, 'ro', markersize=10, label='Output')
-    
-    # Draw gears with detailed circles
-    for gear in state.gears:
-        color = 'blue' if gear.is_driver else 'cyan'
-        
-        # Draw gear circles
-        circles = [
-            (gear.reference_radius, 'solid', 'blue', 'Reference Circle'),
-            (gear.tip_radius, 'dashed', 'red', 'Tip Circle'),
-            (gear.base_radius, 'dotted', 'green', 'Base Circle'),
-            (gear.root_radius, 'dashdot', 'purple', 'Root Circle')
-        ]
-        
-        for radius, linestyle, color, label in circles:
-            circle = Circle((gear.center.x, gear.center.y), radius, 
-                            fill=False, edgecolor=color, linestyle=linestyle, linewidth=1.5,
-                            label=label if gear.id == 1 else None)
-            ax.add_patch(circle)
-        
-        # Draw center marker
-        ax.plot(gear.center.x, gear.center.y, 'ko', markersize=3)
-        
-        # Create gear info label
-        mass = gear.mass(config.GEAR_THICKNESS, config.GEAR_DENSITY)
-        label = (
-            f"ID: {gear.id}\n"
-            f"Teeth: {gear.num_teeth}\n"
-            f"Mass: {mass:.1f}g\n"
-            f"Ref: {gear.reference_diameter:.1f}mm\n"
-            f"Tip: {gear.tip_diameter:.1f}mm\n"
-            f"Base: {gear.base_diameter:.1f}mm\n"
-            f"Root: {gear.root_diameter:.1f}mm"
-        )
-        ax.text(gear.center.x, gear.center.y + gear.tip_radius + 5, label, 
-                ha='center', va='bottom', fontsize=6, bbox=dict(facecolor='white', alpha=0.7))
-    
-    # Add legend for circle styles
-    ax.legend(loc='upper right')
-    
-    # Set plot limits and labels
-    ax.set_xlim(-config.WORKSPACE_SIZE/2, config.WORKSPACE_SIZE/2)
-    ax.set_ylim(-config.WORKSPACE_SIZE/2, config.WORKSPACE_SIZE/2)
-    ax.set_aspect('equal')
-    ax.set_title('Gear System')
-    ax.legend()
     
     # Save or show
     if save_path:

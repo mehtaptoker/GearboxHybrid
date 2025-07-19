@@ -37,21 +37,15 @@ The observation includes:
    - z-layer
 
 ## Reward Function
-```python
-R_total = 
-    w_ratio * R_ratio + 
-    w_torque * R_torque - 
-    p_collision * P_collision - 
-    p_boundary * P_boundary - 
-    p_efficiency * P_efficiency
-```
+The reward function is designed to guide the agent towards a valid and efficient gear system. It is a sum of several components:
+
+`R_total = R_ratio + P_efficiency + R_connection`
 
 ### Reward Components
-- **R_ratio**: Reward for achieving target torque ratio
-- **R_torque**: Reward for torque efficiency
-- **P_collision**: Penalty for gear collisions
-- **P_boundary**: Penalty for boundary violations
-- **P_efficiency**: Penalty for excessive gears
+- **R_ratio**: An exponential reward for achieving a gear ratio close to the target.
+- **P_efficiency**: A penalty for the number of gears used, encouraging simpler designs. This is controlled by the `P_GEAR_COUNT_PENALTY` hyperparameter.
+- **R_connection**: A bonus awarded for successfully connecting the input and output shafts.
+- **Other Penalties**: The environment also applies penalties for invalid actions, such as placing gears outside the boundary or causing collisions.
 
 ## Training Process
 1. **Initialization**:

@@ -72,12 +72,17 @@ def evaluate_model(model_path, data_dir, report_dir="reports/evaluation", num_ep
 
 if __name__ == "__main__":
     import argparse
+    import config
     parser = argparse.ArgumentParser(description='Evaluate a trained model.')
     parser.add_argument('--model', type=str, required=True, help='Path to trained model')
     parser.add_argument('--data-dir', type=str, default='data/intermediate', help='Data directory')
     parser.add_argument('--output-dir', type=str, default='reports/evaluation', help='Output directory for reports')
     parser.add_argument('--num-episodes', type=int, default=10, help='Number of evaluation episodes')
+    parser.add_argument('--max-gears', type=int, default=config.MAX_GEARS, help='Maximum number of gears')
     args = parser.parse_args()
+    
+    # Set max gears from command line
+    config.MAX_GEARS = args.max_gears
     
     results = evaluate_model(args.model, args.data_dir, args.output_dir, args.num_episodes)
     print(f"Evaluation complete. Results saved to reports/evaluation/evaluation_results.json")

@@ -1,10 +1,29 @@
 #!/bin/bash
 
 # Configuration
+VERBOSE=0  # Default verbosity level
 DATA_DIR="data/intermediate"
 GPU_ID=0  # Set to -1 for CPU
 REPORT_DIR="reports/$(date +%Y%m%d_%H%M%S)"
 MODEL_PATH="models/best_policy.pth"
+
+# Parse command line arguments
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --verbose=*)
+      VERBOSE="${1#*=}"
+      shift
+      ;;
+    --data-dir=*)
+      DATA_DIR="${1#*=}"
+      shift
+      ;;
+    *)
+      echo "Unknown parameter: $1"
+      exit 1
+      ;;
+  esac
+done
 
 # Hyperparameters
 LEARNING_RATE=0.001
@@ -45,7 +64,8 @@ python train_torch.py \
     --max-gears $MAX_GEARS \
     --max-steps $MAX_STEPS \
     --min-teeth $MIN_TEETH \
-    --max-teeth $MAX_TEETH
+    --max-teeth $MAX_TEETH \
+    --verbose $VERBOSE
 
 # Move best model
 mv gear_generator_policy.pth "$MODEL_PATH"
@@ -56,6 +76,7 @@ python evaluation.py \
     --model "$MODEL_PATH" \
     --data-dir "$DATA_DIR" \
     --output-dir "$REPORT_DIR" \
-    --num-episodes 5
+    --num-episodes 5 \
+    --max-gears $MAX_GEARS
 
 echo "Experiment complete!"

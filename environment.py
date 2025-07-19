@@ -3,18 +3,22 @@ from gymnasium import spaces
 import numpy as np
 import random
 import math
+import time  # Added for timing
+import os
+import json
 import config
 from components import SystemState, Gear, Vector2D
 from data_generator import generate_scenario
-from physics import check_collision, is_inside_boundary, calculate_gear_train, is_gear_inside_boundary
+from physics import check_collision, is_inside_boundary, calculate_gear_train_ratio, is_gear_inside_boundary
 from reward import calculate_reward
 
 class GearEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, data_dir=None):
+    def __init__(self, data_dir=None, verbose=0):
         super(GearEnv, self).__init__()
         self.data_dir = data_dir if data_dir else 'data/intermediate'
+        self.verbose = verbose  # 0: no debug, 1: basic debug, 2: detailed debug
         # Define Action Space: [action_type, x, y, num_teeth, z_layer], normalized.
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(5,), dtype=np.float32)
 
@@ -45,6 +49,15 @@ class GearEnv(gym.Env):
         remaining_slots = config.MAX_GEARS - len(self.state.gears)
         obs.extend([0] * (remaining_slots * 4))
         
+        # Ensure consistent observation size
+        expected_size = 5 + (config.MAX_GEARS * 4)
+        if len(obs) != expected_size:
+            # Pad or truncate to expected size
+            if len(obs) < expected_size:
+                obs.extend([0] * (expected_size - len(obs)))
+            else:
+                obs = obs[:expected_size]
+        
         return np.array(obs, dtype=np.float32)
 
     def _decode_action(self, action: np.ndarray) -> Gear:
@@ -53,22 +66,44 @@ class GearEnv(gym.Env):
         action_type = int((action[0] + 1) * 1.5)  # Map [-1,1] to [0,2]
         
         if action_type == 0:  # Place new gear
-            x = (action[1] + 1) / 2 * config.WORKSPACE_SIZE - config.WORKSPACE_SIZE/2
-            y = (action[2] + 1) / 2 * config.WORKSPACE_SIZE - config.WORKSPACE_SIZE/2
-            num_teeth = int((action[3] + 1) / 2 * (config.MAX_TEETH - config.MIN_TEETH) + config.MIN_TEETH)
-            z_layer = int((action[4] + 1) / 2)  # 0 or 1
+            # Clamp coordinates to workspace boundaries
+            x_val = (action[1] + 1) / 2 * config.WORKSPACE_SIZE - config.WORKSPACE_SIZE/2
+            y_val = (action[2] + 1) / 2 * config.WORKSPACE_SIZE - config.WORKSPACE_SIZE/2
+            x = max(-config.WORKSPACE_SIZE/2, min(config.WORKSPACE_SIZE/2, x_val))
+            y = max(-config.WORKSPACE_SIZE/2, min(config.WORKSPACE_SIZE/2, y_val))
             
-            return Gear(
+            # Clamp teeth count to valid range
+            teeth_val = int((action[3] + 1) / 2 * (config.MAX_TEETH - config.MIN_TEETH) + config.MIN_TEETH)
+            num_teeth = max(config.MIN_TEETH, min(config.MAX_TEETH, teeth_val))
+            
+            # Ensure teeth count is valid
+            if num_teeth < config.MIN_TEETH or num_teeth > config.MAX_TEETH:
+                num_teeth = random.randint(config.MIN_TEETH, config.MAX_TEETH)
+            
+            # Clamp z-layer to 0 or 1
+            z_val = int((action[4] + 1) / 2)
+            z_layer = max(0, min(1, z_val))
+            
+            # Create new gear
+            new_gear = Gear(
                 id=len(self.state.gears) + 1,
                 center=Vector2D(x, y),
                 num_teeth=num_teeth,
                 module=config.GEAR_MODULE,
                 z_layer=z_layer
             )
+            
+            # The validation of the gear placement (collision, boundary)
+            # is handled in the step function. _decode_action should just
+            # convert the action to a gear without any correction logic.
+            
+            return new_gear
         elif action_type == 1:  # Modify input gear
             # Only modify teeth count
             input_gear = self.state.gears[0]
             new_teeth = int((action[3] + 1) / 2 * (config.MAX_TEETH - config.MIN_TEETH) + config.MIN_TEETH)
+            # Clamp teeth count to valid range
+            new_teeth = max(config.MIN_TEETH, min(config.MAX_TEETH, new_teeth))
             return Gear(
                 id=input_gear.id,
                 center=input_gear.center,
@@ -80,6 +115,8 @@ class GearEnv(gym.Env):
         else:  # Modify output gear
             output_gear = self.state.gears[1]
             new_teeth = int((action[3] + 1) / 2 * (config.MAX_TEETH - config.MIN_TEETH) + config.MIN_TEETH)
+            # Clamp teeth count to valid range
+            new_teeth = max(config.MIN_TEETH, min(config.MAX_TEETH, new_teeth))
             return Gear(
                 id=output_gear.id,
                 center=output_gear.center,
@@ -92,16 +129,25 @@ class GearEnv(gym.Env):
     def reset(self, seed=None, options=None) -> tuple:
         """Reset environment with new scenario."""
         super().reset(seed=seed)
-        # Generate new scenario
-        scenario = generate_scenario(data_dir=self.data_dir)
-        
+        # Load scenario from data_dir
+        if self.data_dir:
+            scenario_files = [f for f in os.listdir(self.data_dir) if f.endswith('.json')]
+            if scenario_files:
+                scenario_file = random.choice(scenario_files)
+                with open(os.path.join(self.data_dir, scenario_file), 'r') as f:
+                    scenario = json.load(f)
+            else:
+                scenario = generate_scenario()
+        else:
+            scenario = generate_scenario()
+
         # Create initial state
         self.state = SystemState(
-            boundary_poly=scenario["boundary_poly"],
+            boundary_poly=[Vector2D(p['x'], p['y']) for p in scenario["boundary_poly"]],
             gears=[],
-            input_shaft=scenario["input_shaft"],
-            output_shaft=scenario["output_shaft"],
-            target_ratio=scenario["target_ratio"]
+            input_shaft=Vector2D(scenario["input_shaft"]['x'], scenario["input_shaft"]['y']),
+            output_shaft=Vector2D(scenario["output_shaft"]['x'], scenario["output_shaft"]['y']),
+            target_ratio=eval(scenario["constraints"]["torque_ratio"].replace(":", "/"))
         )
         
         # Create and add input gear
@@ -136,65 +182,126 @@ class GearEnv(gym.Env):
 
     def step(self, action: np.ndarray) -> tuple:
         """Process agent action and update environment state."""
+        start_time = time.time()
         self.step_count += 1
         terminated = False
         truncated = False
         info = {}
         
+        if self.verbose >= 1:
+            print(f"\n--- Step {self.step_count} ---")
+            print(f"Action: {action}")
+        
         # Decode action into gear
         new_gear = self._decode_action(action)
         
-        # Check for immediate failure conditions
-        if check_collision(new_gear, self.state.gears):
-            reward = config.P_COLLISION
-            terminated = True
-        elif not is_gear_inside_boundary(new_gear, self.state.boundary_poly):
-            reward = config.P_OUT_OF_BOUNDS
-            terminated = True
-        else:
-            # Valid placement - add gear to state
-            self.state.gears.append(new_gear)
+        # Determine action type (same as in _decode_action)
+        action_type = int((action[0] + 1) * 1.5)  # Map [-1,1] to [0,2]
+        
+        if self.verbose >= 1:
+            print(f"Decoded gear: center=({new_gear.center.x:.2f}, {new_gear.center.y:.2f}), "
+                  f"teeth={new_gear.num_teeth}, z_layer={new_gear.z_layer}, action_type={action_type}")
+        
+        # Check for failure conditions
+        if action_type == 0:  # Only check for new gears
+            # Time boundary check with detailed output
+            boundary_start = time.time()
+            boundary_inside, boundary_reason = is_gear_inside_boundary(new_gear, self.state.boundary_poly, return_reason=True)
+            boundary_time = time.time() - boundary_start
             
-            # Calculate distance to output shaft for the new gear
-            dist_to_output = math.sqrt(
-                (new_gear.center.x - self.state.output_shaft.x)**2 +
-                (new_gear.center.y - self.state.output_shaft.y)**2
-            )
+            # Time collision check with detailed output
+            collision_start = time.time()
+            collision_detected, collision_reason = check_collision(new_gear, self.state.gears, return_reason=True)
+            collision_time = time.time() - collision_start
             
-            # Normalized distance reward (closer is better)
-            max_dist = math.sqrt(2) * config.WORKSPACE_SIZE
-            dist_reward = (1 - dist_to_output / max_dist) * 0.5
+            if self.verbose >= 1:
+                print(f"Boundary check took {boundary_time:.6f} seconds: {boundary_reason}")
+                print(f"Collision check took {collision_time:.6f} seconds: {collision_reason}")
             
-            # Check truncation conditions
-            if len(self.state.gears) >= config.MAX_GEARS or self.step_count >= config.MAX_STEPS_PER_EPISODE:
-                truncated = True
-                
-            # Calculate final reward if episode ends
-            success = False
-            if terminated or truncated:
-                # Find gear closest to output shaft
-                output_gear_id = min(
-                    self.state.gears,
-                    key=lambda g: math.sqrt((g.center.x - self.state.output_shaft.x)**2 + 
-                                          (g.center.y - self.state.output_shaft.y)**2)
-                ).id
-                
-                # Calculate gear train ratio
-                input_gear_id = next(g.id for g in self.state.gears if g.is_driver)
-                ratio = calculate_gear_train(self.state.gears, input_gear_id, output_gear_id)
-                
-                # Check if successful connection
-                success = ratio is not None
-                final_reward = 10.0 if success else -1.0
+            if collision_detected:
+                if self.verbose >= 1:
+                    print("FAIL: Gear collision detected")
+                reward = config.P_COLLISION
+                terminated = True
+            elif not boundary_inside:
+                if self.verbose >= 1:
+                    print("FAIL: Gear outside boundary")
+                reward = config.P_OUT_OF_BOUNDS
+                terminated = True
             else:
-                final_reward = 0.0
-            
-            # Combine rewards
-            reward = 0.1 + dist_reward + final_reward
+                # Valid placement - add gear to state
+                self.state.gears.append(new_gear)
+                # Don't terminate on success
+                terminated = False
+                reward = 1.0  # Base reward for successful placement
                 
-        # Ensure episode doesn't get stuck
-        if self.step_count > config.MAX_STEPS_PER_EPISODE // 2 and reward < 0.5:
+                if self.verbose >= 1:
+                    print("SUCCESS: Gear placed successfully")
+                    print(f"Current gear count: {len(self.state.gears)}")
+                    
+                if self.verbose >= 2:
+                    print("Current gears:")
+                    for gear in self.state.gears:
+                        print(f"  Gear {gear.id}: center=({gear.center.x:.2f}, {gear.center.y:.2f}), "
+                              f"teeth={gear.num_teeth}, z_layer={gear.z_layer}")
+                
+                # Calculate distance to output shaft for the new gear
+                dist_to_output = math.sqrt(
+                    (new_gear.center.x - self.state.output_shaft.x)**2 +
+                    (new_gear.center.y - self.state.output_shaft.y)**2
+                )
+                
+                # Normalized distance reward (closer is better)
+                max_dist = math.sqrt(2) * config.WORKSPACE_SIZE
+                dist_reward = (1 - dist_to_output / max_dist) * 0.5
+                reward += dist_reward
+        else:  # Modification action
+            # Find and update existing gear
+            found = False
+            for i, gear in enumerate(self.state.gears):
+                if gear.id == new_gear.id:
+                    self.state.gears[i] = new_gear
+                    found = True
+                    break
+            
+            if not found:
+                if self.verbose >= 1:
+                    print(f"FAIL: Gear with id {new_gear.id} not found")
+                reward = config.P_INVALID_ACTION
+                terminated = True
+            else:
+                if self.verbose >= 1:
+                    print(f"SUCCESS: Modified gear {new_gear.id}")
+                terminated = False
+                reward = 0.1  # Small reward for successful modification
+                
+        # Initialize reward components
+        dist_reward = 0.0
+        final_reward = 0.0
+        
+        # Check truncation conditions
+        if len(self.state.gears) >= config.MAX_GEARS or self.step_count >= config.MAX_STEPS_PER_EPISODE:
             truncated = True
-            reward = -0.5  # Penalty for getting stuck
+                
+            if self.verbose >= 2:
+                print("Current gears:")
+                for gear in self.state.gears:
+                    print(f"  Gear {gear.id}: center=({gear.center.x:.2f}, {gear.center.y:.2f}), "
+                          f"teeth={gear.num_teeth}, z_layer={gear.z_layer}")
+            
+        # Calculate reward
+        success = self._is_successful_connection()
+        reward = calculate_reward(self.state, success)
+        
+        end_time = time.time()
+        step_duration = end_time - start_time
+        if self.verbose >= 1:
+            print(f"Step took {step_duration:.4f} seconds")
         
         return self._get_observation(), reward, terminated, truncated, info
+
+    def _is_successful_connection(self) -> bool:
+        """Check if the gear train connects the input and output shafts."""
+        # For now, we'll consider a connection successful if there are at least 3 gears
+        # This is a placeholder for a more complex graph traversal algorithm
+        return len(self.state.gears) >= 3

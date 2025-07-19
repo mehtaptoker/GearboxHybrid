@@ -62,18 +62,12 @@ class PPOAgent:
         self.memory = deque(maxlen=10000)
         
     def select_action(self, state):
-        # Ensure state is a numpy array before converting to tensor
-        if isinstance(state, np.ndarray):
-            state = torch.FloatTensor(state).unsqueeze(0)
-        else:
-            # If it's a tuple (like from reset), take the first element
-            state = torch.FloatTensor(state[0]).unsqueeze(0) if isinstance(state, tuple) else torch.FloatTensor(state).unsqueeze(0)
-        
+        state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
         mu, std = self.policy(state)
         dist = torch.distributions.Normal(mu, std)
         action = dist.sample()
-        log_prob = dist.log_prob(action)
-        return action.squeeze(0).detach().numpy(), log_prob.squeeze(0).detach().numpy()
+        log_prob = dist.log_prob(action).sum(axis=-1)
+        return action.squeeze(0).cpu().detach().numpy(), log_prob.cpu().detach().numpy()
     
     def store_transition(self, state, action, log_prob, reward, next_state, done):
         self.memory.append((state, action, log_prob, reward, next_state, done))
@@ -149,7 +143,7 @@ class PPOAgent:
             
             if done:
                 print(f"Step: {t}, Episode Reward: {episode_reward}, Length: {episode_length}")
-                state = self.env.reset()
+                state, _ = self.env.reset()
                 episode_reward = 0
                 episode_length = 0
                 
@@ -183,6 +177,8 @@ def main():
                         help='Minimum number of teeth per gear')
     parser.add_argument('--max-teeth', type=int, default=config.MAX_TEETH,
                         help='Maximum number of teeth per gear')
+    parser.add_argument('--verbose', type=int, default=0,
+                        help='Verbosity level (0: none, 1: basic, 2: detailed)')
     
     args = parser.parse_args()
     
@@ -207,7 +203,7 @@ def main():
     else:
         print("Using CPU")
     
-    env = GearEnv(data_dir=config.DATA_DIR)
+    env = GearEnv(data_dir=config.DATA_DIR, verbose=args.verbose)
     agent = PPOAgent(env, device)
     agent.train(config.TOTAL_TIMESTEPS)
 
