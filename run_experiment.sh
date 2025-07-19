@@ -18,6 +18,10 @@ while [ "$#" -gt 0 ]; do
       DATA_DIR="${1#*=}"
       shift
       ;;
+    --total-timesteps=*)
+      TOTAL_TIMESTEPS="${1#*=}"
+      shift
+      ;;
     *)
       echo "Unknown parameter: $1"
       exit 1
@@ -28,7 +32,7 @@ done
 # Hyperparameters
 LEARNING_RATE=0.001
 BATCH_SIZE=64
-TOTAL_TIMESTEPS=100000
+TOTAL_TIMESTEPS=10
 GAMMA=0.99
 EPSILON=0.2
 MAX_GEARS=10

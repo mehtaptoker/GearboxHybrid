@@ -17,9 +17,9 @@ def generate_report(state: SystemState, report_dir: str = "reports"):
     render_system(state, system_img)
     
     # Save gear details for each gear
-    for gear in state.gears:
-        gear_img = os.path.join(report_path, f"gear_{gear.id}.png")
-        render_gear_detail(gear, gear_img)
+    # for gear in state.gears:
+    #     gear_img = os.path.join(report_path, f"gear_{gear.id}.png")
+    #     render_gear_detail(gear, gear_img)
     
     # Calculate metrics
     total_mass = sum(gear.mass(config.GEAR_THICKNESS, config.GEAR_DENSITY) for gear in state.gears)
@@ -76,7 +76,7 @@ def render_system(state: SystemState, save_path: str = None):
     # Draw large, distinct input and output shafts for detection
     if state.input_shaft:
         # Large green circle with thick border
-        circle = Circle((state.input_shaft.x, state.input_shaft.y), 15, 
+        circle = Circle((state.input_shaft.x, state.input_shaft.y), 2, 
                         facecolor='green', edgecolor='black', linewidth=2, 
                         label='Input Shaft', alpha=0.9)
         ax.add_patch(circle)
@@ -86,7 +86,7 @@ def render_system(state: SystemState, save_path: str = None):
                 fontweight='bold')
     if state.output_shaft:
         # Large red circle with thick border
-        circle = Circle((state.output_shaft.x, state.output_shaft.y), 15, 
+        circle = Circle((state.output_shaft.x, state.output_shaft.y), 2, 
                         facecolor='red', edgecolor='black', linewidth=2, 
                         label='Output Shaft', alpha=0.9)
         ax.add_patch(circle)
@@ -97,12 +97,19 @@ def render_system(state: SystemState, save_path: str = None):
     
     # Draw gears (system view)
     for gear in state.gears:
-        color = 'blue' if gear.is_driver else 'cyan'
+        # Draw all gear circles
+        circles = [
+            (gear.reference_radius, 'solid', 'blue', 'Reference Circle'),
+            (gear.tip_radius, 'dashed', 'red', 'Tip Circle'),
+            (gear.base_radius, 'dotted', 'green', 'Base Circle'),
+            (gear.root_radius, 'dashdot', 'purple', 'Root Circle')
+        ]
         
-        # Draw reference circle only
-        circle = Circle((gear.center.x, gear.center.y), gear.reference_radius, 
-                        fill=False, edgecolor=color, linewidth=1.5)
-        ax.add_patch(circle)
+        for radius, linestyle, color, label in circles:
+            circle = Circle((gear.center.x, gear.center.y), radius, 
+                            fill=False, edgecolor=color, linestyle=linestyle, 
+                            linewidth=1.5, label=label if gear.id == 1 else None)
+            ax.add_patch(circle)
         
         # Draw center marker and ID
         ax.plot(gear.center.x, gear.center.y, 'ko', markersize=3)
@@ -117,6 +124,7 @@ def render_system(state: SystemState, save_path: str = None):
     ax.set_aspect('equal')
     ax.set_title('Gear System Overview')
     ax.legend()
+    ax.yaxis.set_inverted(True)
     
     # Save or show
     if save_path:

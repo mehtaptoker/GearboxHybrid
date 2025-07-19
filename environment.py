@@ -130,23 +130,58 @@ class GearEnv(gym.Env):
         """Reset environment with new scenario."""
         super().reset(seed=seed)
         # Load scenario from data_dir
-        if self.data_dir:
-            scenario_files = [f for f in os.listdir(self.data_dir) if f.endswith('.json')]
-            if scenario_files:
-                scenario_file = random.choice(scenario_files)
-                with open(os.path.join(self.data_dir, scenario_file), 'r') as f:
+        if self.data_dir and os.path.exists(self.data_dir):
+            if os.path.isdir(self.data_dir):
+                scenario_files = [f for f in os.listdir(self.data_dir) if f.endswith('.json')]
+                if scenario_files:
+                    scenario_file = random.choice(scenario_files)
+                    with open(os.path.join(self.data_dir, scenario_file), 'r') as f:
+                        scenario = json.load(f)
+                else:
+                    scenario = generate_scenario()
+            elif os.path.isfile(self.data_dir):
+                with open(self.data_dir, 'r') as f:
                     scenario = json.load(f)
             else:
                 scenario = generate_scenario()
         else:
             scenario = generate_scenario()
 
-        # Create initial state
+        # Normalize coordinates to fit into the agent's workspace
+        boundary_points = [Vector2D(p['x'], p['y']) for p in scenario["boundary_poly"]]
+        
+        # Find bounding box of the original polygon
+        min_x = min(p.x for p in boundary_points)
+        max_x = max(p.x for p in boundary_points)
+        min_y = min(p.y for p in boundary_points)
+        max_y = max(p.y for p in boundary_points)
+
+        original_width = max_x - min_x
+        original_height = max_y - min_y
+
+        # Determine scale factor
+        scale = config.WORKSPACE_SIZE / max(original_width, original_height)
+
+        # Calculate offsets to center the polygon
+        offset_x = -min_x * scale + (config.WORKSPACE_SIZE - original_width * scale) / 2 - config.WORKSPACE_SIZE / 2
+        offset_y = -min_y * scale + (config.WORKSPACE_SIZE - original_height * scale) / 2 - config.WORKSPACE_SIZE / 2
+
+        def transform_point(p):
+            new_x = p.x * scale + offset_x
+            new_y = p.y * scale + offset_y
+            return Vector2D(new_x, new_y)
+
+        # Transform all coordinates
+        normalized_boundary = [transform_point(p) for p in boundary_points]
+        normalized_input_shaft = transform_point(Vector2D(scenario["input_shaft"]['x'], scenario["input_shaft"]['y']))
+        normalized_output_shaft = transform_point(Vector2D(scenario["output_shaft"]['x'], scenario["output_shaft"]['y']))
+
+        # Create initial state with normalized coordinates
         self.state = SystemState(
-            boundary_poly=[Vector2D(p['x'], p['y']) for p in scenario["boundary_poly"]],
+            boundary_poly=normalized_boundary,
             gears=[],
-            input_shaft=Vector2D(scenario["input_shaft"]['x'], scenario["input_shaft"]['y']),
-            output_shaft=Vector2D(scenario["output_shaft"]['x'], scenario["output_shaft"]['y']),
+            input_shaft=normalized_input_shaft,
+            output_shaft=normalized_output_shaft,
             target_ratio=eval(scenario["constraints"]["torque_ratio"].replace(":", "/"))
         )
         
