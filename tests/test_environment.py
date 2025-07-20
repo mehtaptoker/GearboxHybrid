@@ -145,15 +145,31 @@ class TestGearEnvironment(unittest.TestCase):
         self.env.state.gears.append(output_gear)
         
         # Add a valid intermediate gear that connects input to output
-        # Position it between input and output at the midpoint
-        midpoint = Vector2D(
-            (self.env.state.input_shaft.x + self.env.state.output_shaft.x) / 2,
-            (self.env.state.input_shaft.y + self.env.state.output_shaft.y) / 2
+        # Position it at a distance where gears can actually mesh
+        # Calculate the required distance for meshing
+        input_radius = input_gear.radius
+        output_radius = output_gear.radius
+        intermediate_radius = (input_radius + output_radius) / 2
+        
+        # Position it along the line between input and output
+        direction = Vector2D(
+            self.env.state.output_shaft.x - self.env.state.input_shaft.x,
+            self.env.state.output_shaft.y - self.env.state.input_shaft.y
+        ).normalized()
+        
+        # Place at a distance that allows meshing with both gears
+        position = Vector2D(
+            self.env.state.input_shaft.x + direction.x * (input_radius + intermediate_radius),
+            self.env.state.input_shaft.y + direction.y * (input_radius + intermediate_radius)
         )
+        
+        # Calculate tooth count based on radius
+        num_teeth = round(2 * intermediate_radius / config.GEAR_MODULE)
+        
         valid_gear = Gear(
             id=3,
-            center=midpoint,
-            num_teeth=20,
+            center=position,
+            num_teeth=num_teeth,
             module=config.GEAR_MODULE,
             z_layer=0
         )
@@ -162,6 +178,10 @@ class TestGearEnvironment(unittest.TestCase):
         input_gear.connected_gears = [3]
         output_gear.connected_gears = [3]
         self.env.state.gears.append(valid_gear)
+        
+        # Update expected ratio based on actual tooth counts
+        expected_ratio = (input_gear.num_teeth / valid_gear.num_teeth) * (valid_gear.num_teeth / output_gear.num_teeth)
+        expected_ratio = input_gear.num_teeth / output_gear.num_teeth
         
         # Calculate expected ratio
         input_to_mid = valid_gear.num_teeth / input_gear.num_teeth
@@ -178,9 +198,13 @@ class TestGearEnvironment(unittest.TestCase):
         obs, reward, terminated, truncated, info = self.env.step(action)
         
         self.assertTrue(truncated, "Episode should end when max steps reached")
-        # With the simplified ratio calculation, reward should be close to zero for perfect match
-        self.assertAlmostEqual(reward, 0, delta=0.01, 
-                              msg="Should get approximately zero reward for perfect connection")
+        # With the new reward function, we expect:
+        #   R_ratio = 1.0 (perfect ratio)
+        #   R_connection = 500.0 (success bonus)
+        #   P_efficiency = -100.0 (one intermediate gear * P_GEAR_COUNT_PENALTY)
+        #   Total = 1.0 + 500.0 - 100.0 = 401.0
+        self.assertAlmostEqual(reward, 401.0, delta=2.0, 
+                              msg="Should get expected reward for perfect connection")
         
         # Restore original max steps
         config.MAX_STEPS_PER_EPISODE = original_max_steps

@@ -7,6 +7,7 @@ import time  # Added for timing
 import os
 import json
 import config
+from collections import deque
 from components import SystemState, Gear, Vector2D
 from data_generator import generate_scenario
 from physics import check_collision, is_inside_boundary, calculate_gear_train_ratio, is_gear_inside_boundary, distance_to_line_segment
@@ -104,26 +105,30 @@ class GearEnv(gym.Env):
             new_teeth = int((action[3] + 1) / 2 * (config.MAX_TEETH - config.MIN_TEETH) + config.MIN_TEETH)
             # Clamp teeth count to valid range
             new_teeth = max(config.MIN_TEETH, min(config.MAX_TEETH, new_teeth))
+            # Preserve connections when modifying
             return Gear(
                 id=input_gear.id,
                 center=input_gear.center,
                 num_teeth=new_teeth,
                 module=input_gear.module,
                 z_layer=input_gear.z_layer,
-                is_driver=True
+                is_driver=True,
+                connected_gears=input_gear.connected_gears.copy()  # Preserve connections
             )
         else:  # Modify output gear
             output_gear = self.state.gears[1]
             new_teeth = int((action[3] + 1) / 2 * (config.MAX_TEETH - config.MIN_TEETH) + config.MIN_TEETH)
             # Clamp teeth count to valid range
             new_teeth = max(config.MIN_TEETH, min(config.MAX_TEETH, new_teeth))
+            # Preserve connections when modifying
             return Gear(
                 id=output_gear.id,
                 center=output_gear.center,
                 num_teeth=new_teeth,
                 module=output_gear.module,
                 z_layer=output_gear.z_layer,
-                is_driver=False
+                is_driver=False,
+                connected_gears=output_gear.connected_gears.copy()  # Preserve connections
             )
 
     def reset(self, seed=None, options=None) -> tuple:
@@ -214,84 +219,51 @@ class GearEnv(gym.Env):
         # Always add input and output gears
         self.state.gears.extend([input_gear, output_gear])
         
-        # Try to add multiple intermediate gears along the connection path
-        from path_planning import generate_gear_path
-        from visualization import generate_connection_line
-        
-        # Get connection path points
-        input_point, output_point = generate_connection_line(
-            self.state.input_shaft, 
-            self.state.output_shaft
+        # Use gap-filling algorithm to generate intermediate gears
+        from refinement import generate_gear_train
+        # Create a straight-line path with one intermediate point
+        start_point = self.state.gears[0].center
+        end_point = self.state.gears[1].center
+        midpoint = Vector2D(
+            (start_point.x + end_point.x) / 2,
+            (start_point.y + end_point.y) / 2
         )
-        path = generate_gear_path(
-            input_point, 
-            output_point, 
-            self.state.boundary_poly,
-            []  # No obstacles for now
+        path = [midpoint]
+        
+        intermediate_gears = generate_gear_train(
+            start_gear=self.state.gears[0],
+            end_gear=self.state.gears[1],
+            path=path,
+            existing_gears=[],
+            boundary_poly=self.state.boundary_poly,
+            obstacles=[],
+            module=config.GEAR_MODULE,
+            max_iterations=50,
+            tolerance=1e-3
         )
         
-        # Debug print path
-        print(f"Generated path with {len(path)} points:")
-        for i, point in enumerate(path):
-            print(f"  Point {i}: ({point.x:.2f}, {point.y:.2f})")
+        # Debug print intermediate gears
+        if self.verbose >= 1 and intermediate_gears is not None:
+            print(f"Generated {len(intermediate_gears)} intermediate gears:")
+            for i, gear in enumerate(intermediate_gears):
+                print(f"  Gear {i}: at ({gear.center.x:.2f}, {gear.center.y:.2f}) with {gear.num_teeth} teeth")
         
-        # Add intermediate gears along the path
-        for i, point in enumerate(path[1:-1]):  # Skip start and end points
-            print(f"Processing path point {i+1}: ({point.x:.2f}, {point.y:.2f})")
-            
-            # Start with minimum teeth size
-            num_teeth = config.MIN_TEETH
-            placed = False
-            
-            # Try increasing teeth sizes until we find one that fits
-            while num_teeth <= config.MAX_TEETH and not placed:
-                intermediate_gear = Gear(
-                    id=len(self.state.gears) + 1,
-                    center=point,
-                    num_teeth=num_teeth,
-                    module=config.GEAR_MODULE,
-                    z_layer=0,
-                    is_driver=False
-                )
-                
+        # Add generated intermediate gears
+        if intermediate_gears:
+            for gear in intermediate_gears:
                 # Check placement validity
-                boundary_ok = is_gear_inside_boundary(intermediate_gear, self.state.boundary_poly)
-                collision_ok = not check_collision(intermediate_gear, self.state.gears)
-                meshing_ok = True
+                boundary_ok = is_gear_inside_boundary(gear, self.state.boundary_poly)
+                collision_ok = not check_collision(gear, self.state.gears)
                 
-                # Check meshing with neighbors
-                if i > 0:
-                    prev_gear = self.state.gears[-1]
-                    meshing_ok = meshing_ok and self._check_gear_meshing(prev_gear, intermediate_gear)
-                
-                if boundary_ok and collision_ok and meshing_ok:
-                    self.state.gears.append(intermediate_gear)
-                    if self.verbose:
-                        print(f"SUCCESS: Added intermediate gear {intermediate_gear.id} at ({point.x:.2f}, {point.y:.2f}) with {num_teeth} teeth")
-                    placed = True
+                if boundary_ok and collision_ok:
+                    self.state.gears.append(gear)
+                    if self.verbose >= 1:
+                        print(f"SUCCESS: Added intermediate gear {gear.id} at "
+                              f"({gear.center.x:.2f}, {gear.center.y:.2f}) with {gear.num_teeth} teeth")
                 else:
-                    num_teeth += 1  # Try a larger gear
-            
-            if not placed:
-                print(f"FAILED to add intermediate gear at ({point.x:.2f}, {point.y:.2f}) after trying all sizes")
-            
-            # Check placement validity
-            boundary_ok = is_gear_inside_boundary(intermediate_gear, self.state.boundary_poly)
-            collision_ok = not check_collision(intermediate_gear, self.state.gears)
-            meshing_ok = True
-            
-            # Check meshing with neighbors
-            if i > 0:
-                prev_gear = self.state.gears[-1]
-                meshing_ok = meshing_ok and self._check_gear_meshing(prev_gear, intermediate_gear)
-            
-            if boundary_ok and collision_ok and meshing_ok:
-                self.state.gears.append(intermediate_gear)
-                if self.verbose:
-                    print(f"SUCCESS: Added intermediate gear {intermediate_gear.id} at ({point.x:.2f}, {point.y:.2f})")
-            else:
-                print(f"FAILED to add intermediate gear: "
-                      f"boundary_ok={boundary_ok}, collision_ok={collision_ok}, meshing_ok={meshing_ok}")
+                    if self.verbose >= 1:
+                        print(f"FAILED to add intermediate gear: "
+                              f"boundary_ok={boundary_ok}, collision_ok={collision_ok}")
         
         # Calculate actual gear train ratio
         if len(self.state.gears) == 3:
@@ -514,11 +486,30 @@ class GearEnv(gym.Env):
         if len(self.state.gears) < 2:
             return False
             
-        # Check that all adjacent gears are meshing
-        gears = self.state.gears
-        for i in range(len(gears) - 1):
-            if not self._check_gear_meshing(gears[i], gears[i+1]):
-                return False
+        # Find input and output gears
+        input_gear = next((g for g in self.state.gears if g.is_driver), None)
+        output_gear = next((g for g in self.state.gears if not g.is_driver), None)
+        
+        if not input_gear or not output_gear:
+            return False
+            
+        # Check connectivity using BFS
+        visited = set()
+        queue = deque([input_gear.id])
+        
+        while queue:
+            current_id = queue.popleft()
+            visited.add(current_id)
+            
+            if current_id == output_gear.id:
+                return True
                 
-        # Check that input is connected to output through the chain
-        return True
+            current_gear = next((g for g in self.state.gears if g.id == current_id), None)
+            if not current_gear:
+                continue
+                
+            for neighbor_id in current_gear.connected_gears:
+                if neighbor_id not in visited:
+                    queue.append(neighbor_id)
+                    
+        return False

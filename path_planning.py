@@ -5,102 +5,148 @@ from components import Vector2D
 from physics import line_segment_intersects_polygon, is_gear_inside_boundary
 import config
 
-def iterative_path_refinement(start: Vector2D, end: Vector2D, boundary: List[Vector2D], 
-                             obstacles: List[List[Vector2D]], input_radius: float,
-                             max_iterations: int = 100) -> Tuple[List[Vector2D], List[float]]:
+def iterative_path_refinement(start_gear, end_gear, boundary: List[Vector2D], 
+                             obstacles: List[List[Vector2D]], 
+                             max_iterations: int = 500, tolerance: float = 1e-2) -> Tuple[List[Vector2D], List[float]]:
     """
-    Generate a viable gear path between start and end points with iterative refinement.
+    Generate a viable gear path between start and end gears with iterative refinement.
     Returns a tuple of (path, radii) where path is list of vertices and radii is list of gear radii.
+    
+    Implements the gap-filling algorithm:
+    1. Initialize path with A* or straight line
+    2. Iterative refinement for radius propagation and path adjustment
     """
-    # Step 1: Generate initial path
+    # Start and end points with fixed radii
+    start = start_gear.center
+    end = end_gear.center
+    r_start = start_gear.radius
+    r_end = end_gear.radius
+    
+    # Initialize path - always include at least one intermediate point
     path = [start]
-    # Simple linear path with one intermediate point
-    midpoint = Vector2D((start.x + end.x)/2, (start.y + end.y)/2)
-    path.append(midpoint)
-    path.append(end)
     
-    # Initialize radii
-    radii = [input_radius]
-    for i in range(1, len(path)):
-        # Calculate distance between consecutive points
-        dist = math.sqrt((path[i].x - path[i-1].x)**2 + (path[i].y - path[i-1].y)**2)
-        # Set radius based on previous gear's radius
-        radii.append(dist - radii[i-1])
+    # Calculate the required distance for direct connection
+    direct_dist = math.sqrt((end.x - start.x)**2 + (end.y - start.y)**2)
+    min_required_dist = r_start + r_end
     
-    # Step 2: Iterative refinement loop
+    # Get workspace boundaries from config
+    half_workspace = config.WORKSPACE_SIZE / 2.0
+    
+    # Always add at least one intermediate point if direct connection isn't possible
+    if direct_dist > min_required_dist:
+        # Add two intermediate points to form a smoother path
+        quarter1 = Vector2D(
+            start.x + (end.x - start.x) * 0.25,
+            start.y + (end.y - start.y) * 0.25
+        )
+        quarter3 = Vector2D(
+            start.x + (end.x - start.x) * 0.75,
+            start.y + (end.y - start.y) * 0.75
+        )
+        # Clamp points to workspace boundaries
+        quarter1.x = max(-half_workspace, min(half_workspace, quarter1.x))
+        quarter1.y = max(-half_workspace, min(half_workspace, quarter1.y))
+        quarter3.x = max(-half_workspace, min(half_workspace, quarter3.x))
+        quarter3.y = max(-half_workspace, min(half_workspace, quarter3.y))
+        path.extend([quarter1, quarter3, end])
+    else:
+        # For close points, just use midpoint
+        midpoint = Vector2D((start.x + end.x)/2, (start.y + end.y)/2)
+        midpoint.x = max(-half_workspace, min(half_workspace, midpoint.x))
+        midpoint.y = max(-half_workspace, min(half_workspace, midpoint.y))
+        path.extend([midpoint, end])
+    
     iteration = 0
-    while iteration < max_iterations:
-        violation_found = False
+    converged = False
+    
+    while iteration < max_iterations and not converged:
+        # Forward radius propagation
+        radii = [r_start]
+        failure_index = None
         
-        # Global validation scan
-        for i in range(1, len(path)-1):  # Skip input and output gears
-            # Create a gear at this position
-            gear = type('Gear', (), {})()
-            gear.center = path[i]
-            gear.radius = radii[i]
-            gear.z_layer = 0
+        # Propagate radii from start to end
+        for i in range(len(path) - 1):
+            dist = math.sqrt((path[i+1].x - path[i].x)**2 + (path[i+1].y - path[i].y)**2)
+            next_radius = dist - radii[-1]
             
-            # Check boundary containment
-            boundary_ok = is_gear_inside_boundary(gear, boundary)
+            # Mid-chain failure detection
+            if next_radius <= 0:
+                failure_index = i+1
+                break
+            radii.append(next_radius)
+        
+        if failure_index is not None:
+            # Adjust segment for mid-chain failure
+            direction = Vector2D(path[failure_index].x - path[failure_index-1].x,
+                                path[failure_index].y - path[failure_index-1].y)
+            if direction.x == 0 and direction.y == 0:
+                direction = Vector2D(1, 0)  # Default direction
             
-            if not boundary_ok:
-                violation_found = True
-                # Find closest boundary point
-                min_dist = float('inf')
-                closest_point = None
-                for j in range(len(boundary)):
-                    p1 = boundary[j]
-                    p2 = boundary[(j+1) % len(boundary)]
-                    
-                    # Calculate distance to line segment
-                    dx = p2.x - p1.x
-                    dy = p2.y - p1.y
-                    length_squared = dx*dx + dy*dy
-                    
-                    if length_squared == 0:
-                        dist = math.sqrt((path[i].x - p1.x)**2 + (path[i].y - p1.y)**2)
-                        if dist < min_dist:
-                            min_dist = dist
-                            closest_point = p1
-                    else:
-                        t = max(0, min(1, ((path[i].x - p1.x) * dx + (path[i].y - p1.y) * dy) / length_squared))
-                        proj_x = p1.x + t * dx
-                        proj_y = p1.y + t * dy
-                        dist = math.sqrt((path[i].x - proj_x)**2 + (path[i].y - proj_y)**2)
-                        
-                        if dist < min_dist:
-                            min_dist = dist
-                            closest_point = Vector2D(proj_x, proj_y)
-                
-                # Push the center away from boundary
-                push_direction = Vector2D(path[i].x - closest_point.x, path[i].y - closest_point.y)
-                push_distance = min_dist - radii[i] + 1.0  # Add 1mm buffer
-                if push_distance <= 0:
-                    push_distance = 1.0  # Minimum push
-                
-                # Normalize and apply push
-                magnitude = math.sqrt(push_direction.x**2 + push_direction.y**2)
-                if magnitude > 0:
-                    push_direction.x /= magnitude
-                    push_direction.y /= magnitude
-                
-                # Update path point
-                path[i] = Vector2D(
-                    path[i].x + push_direction.x * push_distance,
-                    path[i].y + push_direction.y * push_distance
-                )
+            magnitude = math.sqrt(direction.x**2 + direction.y**2)
+            if magnitude > 0:
+                direction.x /= magnitude
+                direction.y /= magnitude
+            
+        # Move vertex to create space (minimum radius buffer)
+        move_distance = config.MIN_RADIUS - next_radius + 1.0
+        path[failure_index] = Vector2D(
+            path[failure_index].x + direction.x * move_distance,
+            path[failure_index].y + direction.y * move_distance
+        )
+        # Clamp to workspace boundaries
+        path[failure_index].x = max(-half_workspace, min(half_workspace, path[failure_index].x))
+        path[failure_index].y = max(-half_workspace, min(half_workspace, path[failure_index].y))
+            iteration += 1
+            continue
         
-        # Recalculate radii
-        for i in range(1, len(path)):
-            dist = math.sqrt((path[i].x - path[i-1].x)**2 + (path[i].y - path[i-1].y)**2)
-            # Only update if not input gear
-            if i > 0:
-                radii[i] = dist - radii[i-1]
+        # Endpoint mismatch check
+        last_dist = math.sqrt((path[-1].x - path[-2].x)**2 + (path[-1].y - path[-2].y)**2)
+        E = (radii[-1] + r_end) - last_dist
         
-        if not violation_found:
+        if abs(E) < tolerance:
+            converged = True
             break
-            
+        
+        # Distribute error across intermediate joints
+        num_joints = len(path) - 2  # Intermediate joints only
+        if num_joints > 0:
+            adjustment_per_joint = E / num_joints
+            for i in range(1, len(path)-1):
+                # Move joint along the path direction
+                segment_vec = Vector2D(path[i+1].x - path[i-1].x, 
+                                      path[i+1].y - path[i-1].y)
+                if segment_vec.x == 0 and segment_vec.y == 0:
+                    segment_vec = Vector2D(1, 0)  # Default direction
+                
+                magnitude = math.sqrt(segment_vec.x**2 + segment_vec.y**2)
+                if magnitude > 0:
+                    segment_vec.x /= magnitude
+                    segment_vec.y /= magnitude
+                
+                path[i] = Vector2D(
+                    path[i].x + segment_vec.x * adjustment_per_joint,
+                    path[i].y + segment_vec.y * adjustment_per_joint
+                )
+                # Clamp to workspace boundaries
+                path[i].x = max(-half_workspace, min(half_workspace, path[i].x))
+                path[i].y = max(-half_workspace, min(half_workspace, path[i].y))
+        
         iteration += 1
+    
+    # Final validation
+    if not converged:
+        # Instead of failing, return the best path we have with a warning
+        print(f"Warning: Path refinement failed to converge after {max_iterations} iterations, using best path found")
+    
+    # Ensure we have at least one intermediate gear
+    if len(path) <= 2:
+        # Fallback: add midpoint if algorithm converged to direct path
+        midpoint = Vector2D((start.x + end.x)/2, (start.y + end.y)/2)
+        path.insert(1, midpoint)
+        # Estimate radius for midpoint
+        dist1 = math.sqrt((midpoint.x - start.x)**2 + (midpoint.y - start.y)**2)
+        dist2 = math.sqrt((end.x - midpoint.x)**2 + (end.y - midpoint.y)**2)
+        radii = [r_start, dist1 - r_start, dist2 - (dist1 - r_start)]
     
     return path, radii
 

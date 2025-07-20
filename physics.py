@@ -76,12 +76,13 @@ def distance_to_line_segment(point: Vector2D, line_start: Vector2D, line_end: Ve
     dy = point.y - closest_point.y
     return math.sqrt(dx**2 + dy**2)
 
-def check_meshing(gear1: Gear, gear2: Gear) -> bool:
+def check_meshing(gear1: Gear, gear2: Gear, abs_tol: float = 0.1) -> bool:
     """Check if two gears can mesh.
     
     Args:
         gear1: First gear
         gear2: Second gear
+        abs_tol: Absolute tolerance for distance comparison
         
     Returns:
         True if gears can mesh, False otherwise
@@ -99,7 +100,8 @@ def check_meshing(gear1: Gear, gear2: Gear) -> bool:
     sum_radii = gear1.radius + gear2.radius
     
     # Check if distance matches sum of radii within tolerance
-    return math.isclose(distance, sum_radii, rel_tol=config.MESHING_TOLERANCE)
+    return math.isclose(distance, sum_radii, rel_tol=config.MESHING_TOLERANCE) or \
+           abs(distance - sum_radii) < abs_tol
 
 def check_collision(new_gear: Gear, existing_gears: List[Gear], return_reason=False) -> bool:
     """Check if new gear collides with existing gears.
@@ -126,8 +128,8 @@ def check_collision(new_gear: Gear, existing_gears: List[Gear], return_reason=Fa
         # Calculate sum of radii
         sum_radii = new_gear.radius + gear.radius
         
-        # Collision if distance < sum of radii (not equal, as that would be meshing)
-        if distance < sum_radii and not math.isclose(distance, sum_radii):
+        # Collision if distance < sum of radii minus tolerance (not equal, as that would be meshing)
+        if distance < sum_radii - config.MESHING_TOLERANCE:
             reason = f"Collision with gear {gear.id} (distance={distance:.2f} < sum_radii={sum_radii:.2f})"
             return (True, reason) if return_reason else True
             

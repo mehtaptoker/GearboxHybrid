@@ -1,6 +1,6 @@
 import unittest
 from components import Gear, Vector2D
-from physics import check_meshing, check_collision, is_inside_boundary, calculate_gear_train
+from physics import check_meshing, check_collision, is_inside_boundary
 
 class TestPhysics(unittest.TestCase):
     def test_check_meshing(self):
