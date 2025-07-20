@@ -57,7 +57,31 @@ def calculate_reward(state: SystemState, success: bool) -> float:
                 
     R_meshing = meshing_pairs * 10.0  # Increased reward for each meshing pair
     
+    # Penalty for disconnected systems
+    disconnected_penalty = 0.0
+    if not success:
+        # Apply heavy penalty for disconnected systems
+        disconnected_penalty = -100.0
+        # Additional penalty for each disconnected gear
+        disconnected_count = 0
+        for gear in state.gears:
+            # A gear is disconnected if it doesn't mesh with any other gear
+            meshed = False
+            for other in state.gears:
+                if gear != other and state.is_connected(gear, other):
+                    meshed = True
+                    break
+            if not meshed:
+                disconnected_count += 1
+                
+        disconnected_penalty += -30.0 * disconnected_count
+        
+    # Bonus for connected systems
+    connected_bonus = 0.0
+    if success:
+        connected_bonus = 200.0
+        
     # Total reward calculation
-    total_reward = R_ratio + P_efficiency + R_connection + R_meshing + R_intermediate
+    total_reward = R_ratio + P_efficiency + R_connection + R_meshing + R_intermediate + disconnected_penalty + connected_bonus
     
     return total_reward
