@@ -1,0 +1,47 @@
+[
+  {
+    "episode": 1,
+    "reward": -3203.997531803917,
+    "steps": 20,
+    "report_path": "reports/20250720_020326/episode_1/report_20250720_021018",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.95
+  },
+  {
+    "episode": 2,
+    "reward": -3203.6336872222264,
+    "steps": 20,
+    "report_path": "reports/20250720_020326/episode_2/report_20250720_021018",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.7
+  },
+  {
+    "episode": 3,
+    "reward": -3203.950424956466,
+    "steps": 20,
+    "report_path": "reports/20250720_020326/episode_3/report_20250720_021019",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.8
+  },
+  {
+    "episode": 4,
+    "reward": -3196.6424111765714,
+    "steps": 20,
+    "report_path": "reports/20250720_020326/episode_4/report_20250720_021019",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.45
+  },
+  {
+    "episode": 5,
+    "reward": -3203.9990920014047,
+    "steps": 20,
+    "report_path": "reports/20250720_020326/episode_5/report_20250720_021019",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 1.0
+  }
+]
