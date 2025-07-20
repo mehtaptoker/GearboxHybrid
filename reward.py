@@ -29,7 +29,11 @@ def calculate_reward(state: SystemState, success: bool) -> float:
         R_ratio = 100.0 * math.exp(-ratio_error * 10)  # Exponential reward
     
     # Penalty for the number of gears to encourage efficiency
-    P_efficiency = len(state.gears) * config.P_GEAR_COUNT_PENALTY
+    # Only apply penalty for gears beyond the minimum required
+    if len(state.gears) > 2:
+        P_efficiency = (len(state.gears) - 2) * config.P_GEAR_COUNT_PENALTY
+    else:
+        P_efficiency = 0.0
     
     # Intermediate gear bonus - reward for gears that connect input to output
     R_intermediate = 0.0
@@ -39,7 +43,11 @@ def calculate_reward(state: SystemState, success: bool) -> float:
         for gear in intermediate_gears:
             if (state.is_connected(input_gear, gear) and 
                 state.is_connected(gear, output_gear)):
-                R_intermediate += 50.0  # Bonus for each intermediate gear that connects input to output
+                R_intermediate += 150.0  # Significantly increased bonus for intermediate gears
+                
+        # Additional bonus for each intermediate gear beyond the first
+        if len(intermediate_gears) > 1:
+            R_intermediate += 75.0 * (len(intermediate_gears) - 1)
 
     # Bonus for a successful connection
     if success:
