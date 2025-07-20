@@ -3,6 +3,7 @@ MAX_GEARS = 15
 MAX_STEPS_PER_EPISODE = 20
 BOUNDARY_COMPLEXITY = 8
 WORKSPACE_SIZE = 100.0  # The coordinate system will range from -50 to 50
+MAX_GAP_FILLING_ITERATIONS = 1000  # Maximum iterations for the gap filling algorithm
 
 # --- Physics Configuration ---
 GEAR_MODULE = 1.0

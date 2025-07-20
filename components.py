@@ -20,6 +20,13 @@ class Vector2D:
             return Vector2D(0, 0)
         return Vector2D(self.x / mag, self.y / mag)
         
+    def interpolate(self, other: 'Vector2D', t: float) -> 'Vector2D':
+        """Linearly interpolate between two vectors"""
+        return Vector2D(
+            self.x + (other.x - self.x) * t,
+            self.y + (other.y - self.y) * t
+        )
+        
     def __hash__(self):
         return hash((self.x, self.y))
         

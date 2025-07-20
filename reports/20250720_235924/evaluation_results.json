@@ -1,0 +1,47 @@
+[
+  {
+    "episode": 1,
+    "reward": -2000.0,
+    "steps": 20,
+    "report_path": "reports/20250720_235924/episode_1/report_20250720_235935",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.725
+  },
+  {
+    "episode": 2,
+    "reward": -2000.0,
+    "steps": 20,
+    "report_path": "reports/20250720_235924/episode_2/report_20250720_235935",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.45
+  },
+  {
+    "episode": 3,
+    "reward": -2000.0,
+    "steps": 20,
+    "report_path": "reports/20250720_235924/episode_3/report_20250720_235936",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.35
+  },
+  {
+    "episode": 4,
+    "reward": -2000.0,
+    "steps": 20,
+    "report_path": "reports/20250720_235924/episode_4/report_20250720_235936",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.625
+  },
+  {
+    "episode": 5,
+    "reward": -2000.0,
+    "steps": 20,
+    "report_path": "reports/20250720_235924/episode_5/report_20250720_235936",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.7
+  }
+]

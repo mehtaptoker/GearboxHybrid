@@ -238,7 +238,7 @@ class GearEnv(gym.Env):
             boundary_poly=self.state.boundary_poly,
             obstacles=[],
             module=config.GEAR_MODULE,
-            max_iterations=50,
+            max_iterations=config.MAX_GAP_FILLING_ITERATIONS,
             tolerance=1e-3
         )
         
