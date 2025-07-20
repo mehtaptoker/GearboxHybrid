@@ -9,7 +9,7 @@ import json
 import config
 from components import SystemState, Gear, Vector2D
 from data_generator import generate_scenario
-from physics import check_collision, is_inside_boundary, calculate_gear_train_ratio, is_gear_inside_boundary
+from physics import check_collision, is_inside_boundary, calculate_gear_train_ratio, is_gear_inside_boundary, distance_to_line_segment
 from reward import calculate_reward
 
 class GearEnv(gym.Env):
@@ -211,59 +211,87 @@ class GearEnv(gym.Env):
             (output_gear.center.y - input_gear.center.y)**2
         )
         
-        # Try to add intermediate gear with timeout
-        intermediate_placed = False
-        start_time = time.time()
-        timeout = 0.5  # 0.5 second timeout
+        # Always add input and output gears
+        self.state.gears.extend([input_gear, output_gear])
         
-        # Calculate possible intermediate teeth range
-        min_inter_teeth = max(config.MIN_TEETH, 
-                             int((dist_center - input_gear.radius - output_gear.radius) / config.GEAR_MODULE))
-        max_inter_teeth = min(config.MAX_TEETH, 
-                             int(dist_center / config.GEAR_MODULE))
+        # Try to add multiple intermediate gears along the connection path
+        from path_planning import generate_gear_path
+        from visualization import generate_connection_line
         
-        if min_inter_teeth <= max_inter_teeth:
-            # Try teeth counts from largest to smallest (more likely to mesh)
-            teeth_options = list(range(max_inter_teeth, min_inter_teeth-1, -1))
-            for num_teeth_intermediate in teeth_options[:10]:  # Limit to 10 attempts
-                # Check timeout
-                if time.time() - start_time > timeout:
+        # Get connection path points
+        input_point, output_point = generate_connection_line(
+            self.state.input_shaft, 
+            self.state.output_shaft
+        )
+        path = generate_gear_path(
+            input_point, 
+            output_point, 
+            self.state.boundary_poly,
+            []  # No obstacles for now
+        )
+        
+        # Debug print path
+        print(f"Generated path with {len(path)} points:")
+        for i, point in enumerate(path):
+            print(f"  Point {i}: ({point.x:.2f}, {point.y:.2f})")
+        
+        # Add intermediate gears along the path
+        for i, point in enumerate(path[1:-1]):  # Skip start and end points
+            print(f"Processing path point {i+1}: ({point.x:.2f}, {point.y:.2f})")
+            
+            # Start with minimum teeth size
+            num_teeth = config.MIN_TEETH
+            placed = False
+            
+            # Try increasing teeth sizes until we find one that fits
+            while num_teeth <= config.MAX_TEETH and not placed:
+                intermediate_gear = Gear(
+                    id=len(self.state.gears) + 1,
+                    center=point,
+                    num_teeth=num_teeth,
+                    module=config.GEAR_MODULE,
+                    z_layer=0,
+                    is_driver=False
+                )
+                
+                # Check placement validity
+                boundary_ok = is_gear_inside_boundary(intermediate_gear, self.state.boundary_poly)
+                collision_ok = not check_collision(intermediate_gear, self.state.gears)
+                meshing_ok = True
+                
+                # Check meshing with neighbors
+                if i > 0:
+                    prev_gear = self.state.gears[-1]
+                    meshing_ok = meshing_ok and self._check_gear_meshing(prev_gear, intermediate_gear)
+                
+                if boundary_ok and collision_ok and meshing_ok:
+                    self.state.gears.append(intermediate_gear)
                     if self.verbose:
-                        print("TIMEOUT: Intermediate gear placement took too long")
-                    break
-                
-                # Calculate possible positions
-                positions = self._calculate_intermediate_positions(input_gear, output_gear, num_teeth_intermediate)
-                
-                for position in positions:
-                    intermediate_gear = Gear(
-                        id=3,
-                        center=position,
-                        num_teeth=num_teeth_intermediate,
-                        module=config.GEAR_MODULE,
-                        z_layer=0,
-                        is_driver=False
-                    )
-                    
-                    # Check placement validity
-                    boundary_ok = is_gear_inside_boundary(intermediate_gear, self.state.boundary_poly)
-                    collision_ok = not check_collision(intermediate_gear, [input_gear, output_gear])
-                    meshing_ok = self._check_gear_meshing(input_gear, intermediate_gear) and \
-                                 self._check_gear_meshing(intermediate_gear, output_gear)
-                    
-                    if boundary_ok and collision_ok and meshing_ok:
-                        self.state.gears.extend([input_gear, output_gear, intermediate_gear])
-                        intermediate_placed = True
-                        if self.verbose:
-                            print(f"SUCCESS: Intermediate gear placed with {num_teeth_intermediate} teeth")
-                        break  # Break out of position loop
-                if intermediate_placed:
-                    break  # Break out of teeth loop
-        
-        if not intermediate_placed:
-            self.state.gears.extend([input_gear, output_gear])
-            if self.verbose:
-                print("WARNING: Intermediate gear placement failed after all attempts")
+                        print(f"SUCCESS: Added intermediate gear {intermediate_gear.id} at ({point.x:.2f}, {point.y:.2f}) with {num_teeth} teeth")
+                    placed = True
+                else:
+                    num_teeth += 1  # Try a larger gear
+            
+            if not placed:
+                print(f"FAILED to add intermediate gear at ({point.x:.2f}, {point.y:.2f}) after trying all sizes")
+            
+            # Check placement validity
+            boundary_ok = is_gear_inside_boundary(intermediate_gear, self.state.boundary_poly)
+            collision_ok = not check_collision(intermediate_gear, self.state.gears)
+            meshing_ok = True
+            
+            # Check meshing with neighbors
+            if i > 0:
+                prev_gear = self.state.gears[-1]
+                meshing_ok = meshing_ok and self._check_gear_meshing(prev_gear, intermediate_gear)
+            
+            if boundary_ok and collision_ok and meshing_ok:
+                self.state.gears.append(intermediate_gear)
+                if self.verbose:
+                    print(f"SUCCESS: Added intermediate gear {intermediate_gear.id} at ({point.x:.2f}, {point.y:.2f})")
+            else:
+                print(f"FAILED to add intermediate gear: "
+                      f"boundary_ok={boundary_ok}, collision_ok={collision_ok}, meshing_ok={meshing_ok}")
         
         # Calculate actual gear train ratio
         if len(self.state.gears) == 3:
@@ -368,6 +396,23 @@ class GearEnv(gym.Env):
             collision_detected, collision_reason = check_collision(new_gear, self.state.gears, return_reason=True)
             collision_time = time.time() - collision_start
             
+            # Time connection line distance check
+            connection_start = time.time()
+            from visualization import generate_connection_line
+            input_point, output_point = generate_connection_line(self.state.input_shaft, self.state.output_shaft)
+            
+            # Calculate distance to line segment
+            distance = distance_to_line_segment(
+                new_gear.center, 
+                input_point, 
+                output_point
+            )
+            within_connection = (distance <= config.CONNECTION_PATH_WIDTH)
+            connection_time = time.time() - connection_start
+            
+            if self.verbose >= 1:
+                print(f"Connection check took {connection_time:.6f} seconds: {'Within connection' if within_connection else 'Outside connection'}")
+            
             if self.verbose >= 1:
                 print(f"Boundary check took {boundary_time:.6f} seconds: {boundary_reason}")
                 print(f"Collision check took {collision_time:.6f} seconds: {collision_reason}")
@@ -381,6 +426,11 @@ class GearEnv(gym.Env):
                 if self.verbose >= 1:
                     print("FAIL: Gear outside boundary")
                 reward = config.P_OUT_OF_BOUNDS
+                terminated = True
+            elif not within_connection:
+                if self.verbose >= 1:
+                    print(f"FAIL: Gear center too far from connection line (distance={distance:.2f} > {config.CONNECTION_PATH_WIDTH})")
+                reward = config.P_OUT_OF_CONNECTION
                 terminated = True
             else:
                 # Valid placement - add gear to state

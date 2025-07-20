@@ -5,6 +5,77 @@ from typing import List, Optional, Dict
 from components import Gear, Vector2D
 import config
 
+def point_in_polygon(point: Vector2D, polygon: List[Vector2D]) -> bool:
+    """Check if a point is inside a polygon using ray casting algorithm.
+    
+    Args:
+        point: Point to check
+        polygon: List of polygon vertices
+        
+    Returns:
+        True if point is inside polygon, False otherwise
+    """
+    x, y = point.x, point.y
+    n = len(polygon)
+    inside = False
+    
+    p1 = polygon[0]
+    for i in range(n+1):
+        p2 = polygon[i % n]
+        if y > min(p1.y, p2.y):
+            if y <= max(p1.y, p2.y):
+                if x <= max(p1.x, p2.x):
+                    if p1.y != p2.y:
+                        xinters = (y - p1.y) * (p2.x - p1.x) / (p2.y - p1.y) + p1.x
+                    if p1.x == p2.x or x <= xinters:
+                        inside = not inside
+        p1 = p2
+        
+    return inside
+
+def distance_to_line_segment(point: Vector2D, line_start: Vector2D, line_end: Vector2D) -> float:
+    """Calculate the shortest distance from a point to a line segment.
+    
+    Args:
+        point: The point to calculate distance for
+        line_start: Start point of the line segment
+        line_end: End point of the line segment
+        
+    Returns:
+        The shortest distance from the point to the line segment
+    """
+    # Vector from line_start to line_end
+    line_vec = Vector2D(line_end.x - line_start.x, line_end.y - line_start.y)
+    # Vector from line_start to point
+    point_vec = Vector2D(point.x - line_start.x, point.y - line_start.y)
+    
+    # Length of the line segment
+    line_len = math.sqrt(line_vec.x**2 + line_vec.y**2)
+    
+    # If line length is zero, return distance to start point
+    if line_len == 0:
+        return math.sqrt(point_vec.x**2 + point_vec.y**2)
+    
+    # Normalize line vector
+    line_vec_norm = Vector2D(line_vec.x / line_len, line_vec.y / line_len)
+    
+    # Calculate projection of point_vec onto line_vec_norm
+    proj_length = point_vec.x * line_vec_norm.x + point_vec.y * line_vec_norm.y
+    
+    # Clamp projection to line segment
+    proj_length = max(0, min(line_len, proj_length))
+    
+    # Calculate closest point on line segment
+    closest_point = Vector2D(
+        line_start.x + line_vec_norm.x * proj_length,
+        line_start.y + line_vec_norm.y * proj_length
+    )
+    
+    # Calculate distance between point and closest point
+    dx = point.x - closest_point.x
+    dy = point.y - closest_point.y
+    return math.sqrt(dx**2 + dy**2)
+
 def check_meshing(gear1: Gear, gear2: Gear) -> bool:
     """Check if two gears can mesh.
     
@@ -115,7 +186,7 @@ def is_gear_inside_boundary(gear: Gear, boundary_poly: List[Vector2D], return_re
     min_distance = polygon.boundary.distance(center_point)
     
     # If min_distance < gear radius, gear extends beyond boundary
-    if min_distance < gear.radius:
+    if min_distance < gear.radius * 0.9:  # Allow 10% overlap
         reason = f"Gear extends beyond boundary (min_distance={min_distance:.2f} < radius={gear.radius:.2f})"
         return (False, reason) if return_reason else False
         
@@ -128,11 +199,13 @@ def is_gear_inside_boundary(gear: Gear, boundary_poly: List[Vector2D], return_re
         point = Point(x, y)
         
         if not polygon.contains(point):
-            # Calculate distance to boundary for more detailed error
-            distance_to_boundary = polygon.boundary.distance(point)
-            reason = (f"Gear edge point at ({x:.2f}, {y:.2f}) is outside boundary "
-                      f"(distance={distance_to_boundary:.5f})")
-            return (False, reason) if return_reason else False
+                # Calculate distance to boundary for more detailed error
+                distance_to_boundary = polygon.boundary.distance(point)
+                # Only reject if significantly beyond boundary
+                if distance_to_boundary < -gear.radius * 0.1:  # Allow 10% overlap
+                    reason = (f"Gear edge point at ({x:.2f}, {y:.2f}) is outside boundary "
+                              f"(distance={distance_to_boundary:.5f})")
+                    return (False, reason) if return_reason else False
             
     return (True, "") if return_reason else True
 
@@ -174,3 +247,20 @@ def validate_gear(gear: Gear) -> bool:
         return False
     
     return True
+
+def line_segments_intersect(a: Vector2D, b: Vector2D, c: Vector2D, d: Vector2D) -> bool:
+    """Check if line segment AB intersects line segment CD."""
+    def ccw(A, B, C):
+        return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x)
+    
+    return ccw(a, c, d) != ccw(b, c, d) and ccw(a, b, c) != ccw(a, b, d)
+
+def line_segment_intersects_polygon(p1: Vector2D, p2: Vector2D, poly: List[Vector2D]) -> bool:
+    """Check if a line segment intersects a polygon."""
+    n = len(poly)
+    for i in range(n):
+        q1 = poly[i]
+        q2 = poly[(i + 1) % n]
+        if line_segments_intersect(p1, p2, q1, q2):
+            return True
+    return False

@@ -3,8 +3,13 @@ import json
 import matplotlib.pyplot as plt
 from datetime import datetime
 from matplotlib.patches import Circle, Polygon
-from components import SystemState, Gear
+from components import SystemState, Gear, Vector2D
 import config
+import math
+
+def generate_connection_line(input_shaft: Vector2D, output_shaft: Vector2D):
+    """Generate a line connecting input and output shafts"""
+    return (input_shaft, output_shaft)
 def generate_report(state: SystemState, report_dir: str = "reports"):
     """Generate a comprehensive report for a system state."""
     # Create timestamped report directory
@@ -72,6 +77,18 @@ def render_system(state: SystemState, save_path: str = None):
         if boundary_points:  # Ensure we have points to draw
             boundary_poly = Polygon(boundary_points, closed=True, fill=None, edgecolor='black', linewidth=2)
             ax.add_patch(boundary_poly)
+    
+    # Draw connection line between input and output shafts
+    if state.input_shaft and state.output_shaft:
+        input_point, output_point = generate_connection_line(state.input_shaft, state.output_shaft)
+        ax.plot([input_point.x, output_point.x], [input_point.y, output_point.y], 
+                color='black', linestyle='dotted', linewidth=2)
+        # Add label
+        mid_x = (input_point.x + output_point.x) / 2
+        mid_y = (input_point.y + output_point.y) / 2
+        ax.text(mid_x, mid_y, 'Connection Path', 
+                ha='center', va='center', fontsize=10, 
+                bbox=dict(facecolor='white', alpha=0.7))
     
     # Draw large, distinct input and output shafts for detection
     if state.input_shaft:

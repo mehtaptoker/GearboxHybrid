@@ -19,6 +19,14 @@ class Vector2D:
         if mag == 0:
             return Vector2D(0, 0)
         return Vector2D(self.x / mag, self.y / mag)
+        
+    def __hash__(self):
+        return hash((self.x, self.y))
+        
+    def __eq__(self, other):
+        if not isinstance(other, Vector2D):
+            return False
+        return math.isclose(self.x, other.x) and math.isclose(self.y, other.y)
 
 @dataclass
 class Gear:

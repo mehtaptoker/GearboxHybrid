@@ -11,6 +11,7 @@ MAX_TEETH = 40
 MESHING_TOLERANCE = 1e-2  # Increased tolerance for more robust meshing checks
 GEAR_THICKNESS = 10.0  # Constant thickness for all gears (mm)
 GEAR_DENSITY = 7.85    # Steel density (g/cm³)
+CONNECTION_PATH_WIDTH = 10.0  # Width of the connection path (mm)
 
 # --- RL Training Hyperparameters ---
 MODEL_ALGORITHM = "PPO"
@@ -24,6 +25,7 @@ EPSILON = 0.2
 # --- Reward Weights ---
 W_RATIO_SUCCESS = 100.0
 P_COLLISION = -10.0
+P_OUT_OF_CONNECTION = -10.0  # Penalty for placing gear outside connection polygon
 WEIGHT_PENALTY = -0.01  # Penalty per gram of total gear mass
 P_OUT_OF_BOUNDS = -10.0
 P_NO_CONNECTION = -20.0  # Penalty if the final train doesn't connect I/O
