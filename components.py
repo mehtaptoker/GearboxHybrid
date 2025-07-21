@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Any  # Add Any import
 import math
 import config
 
@@ -20,6 +20,12 @@ class Vector2D:
             return Vector2D(0, 0)
         return Vector2D(self.x / mag, self.y / mag)
         
+    def __add__(self, other: 'Vector2D') -> 'Vector2D':
+        return Vector2D(self.x + other.x, self.y + other.y)
+        
+    def __sub__(self, other: 'Vector2D') -> 'Vector2D':
+        return Vector2D(self.x - other.x, self.y - other.y)
+        
     def interpolate(self, other: 'Vector2D', t: float) -> 'Vector2D':
         """Linearly interpolate between two vectors"""
         return Vector2D(
@@ -34,6 +40,10 @@ class Vector2D:
         if not isinstance(other, Vector2D):
             return False
         return math.isclose(self.x, other.x) and math.isclose(self.y, other.y)
+        
+    def to_dict(self) -> dict:
+        """Convert Vector2D object to dictionary for serialization"""
+        return {'x': self.x, 'y': self.y}
 
 @dataclass
 class Gear:
@@ -102,6 +112,19 @@ class Gear:
         volume_mm3 = self.area * thickness
         volume_cm3 = volume_mm3 / 1000.0
         return volume_cm3 * density
+        
+    def to_dict(self) -> dict:
+        """Convert Gear object to dictionary for serialization"""
+        return {
+            'id': self.id,
+            'center': {'x': self.center.x, 'y': self.center.y},
+            'num_teeth': self.num_teeth,
+            'module': self.module,
+            'pressure_angle': self.pressure_angle,
+            'z_layer': self.z_layer,
+            'is_driver': self.is_driver,
+            'connected_gears': self.connected_gears
+        }
 
 @dataclass
 class SystemState:
@@ -110,6 +133,8 @@ class SystemState:
     input_shaft: Vector2D
     output_shaft: Vector2D
     target_ratio: float
+    obstacles: List[Any] = field(default_factory=list)  # Add obstacles attribute
+    connections: List[Any] = field(default_factory=list)  # Add connections attribute
 
     def calculate_ratio(self) -> float:
         """Calculate the gear ratio of the system."""
@@ -125,3 +150,7 @@ class SystemState:
                          (gear1.center.y - gear2.center.y)**2)
         expected_dist = gear1.radius + gear2.radius
         return abs(dist - expected_dist) < config.GEAR_MODULE * 0.5  # 50% tolerance for practical purposes
+        
+    def are_gears_connected(self, gear1: Gear, gear2: Gear) -> bool:
+        """Alias for is_connected method for backward compatibility"""
+        return self.is_connected(gear1, gear2)

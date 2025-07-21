@@ -1,0 +1,92 @@
+[
+  {
+    "episode": 1,
+    "reward": 2.2719428898560696e-87,
+    "steps": 20,
+    "report_path": "reports/evaluation/20250722_012740/episode_1/report_20250722_012744",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.2
+  },
+  {
+    "episode": 2,
+    "reward": 0.008772490340191577,
+    "steps": 20,
+    "report_path": "reports/evaluation/20250722_012740/episode_2/report_20250722_012745",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.725
+  },
+  {
+    "episode": 3,
+    "reward": 2.7342239764635193e-34,
+    "steps": 20,
+    "report_path": "reports/evaluation/20250722_012740/episode_3/report_20250722_012745",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.3
+  },
+  {
+    "episode": 4,
+    "reward": 4.2922045732027e-06,
+    "steps": 20,
+    "report_path": "reports/evaluation/20250722_012740/episode_4/report_20250722_012746",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.575
+  },
+  {
+    "episode": 5,
+    "reward": 1.287735362343639e-10,
+    "steps": 20,
+    "report_path": "reports/evaluation/20250722_012740/episode_5/report_20250722_012746",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.475
+  },
+  {
+    "episode": 6,
+    "reward": 5.68479386255934e-07,
+    "steps": 20,
+    "report_path": "reports/evaluation/20250722_012740/episode_6/report_20250722_012746",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.55
+  },
+  {
+    "episode": 7,
+    "reward": 1.2620626359589644,
+    "steps": 20,
+    "report_path": "reports/evaluation/20250722_012740/episode_7/report_20250722_012747",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.975
+  },
+  {
+    "episode": 8,
+    "reward": 2.2719428898560696e-87,
+    "steps": 20,
+    "report_path": "reports/evaluation/20250722_012740/episode_8/report_20250722_012747",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.2
+  },
+  {
+    "episode": 9,
+    "reward": 5.3808853659905414e-08,
+    "steps": 20,
+    "report_path": "reports/evaluation/20250722_012740/episode_9/report_20250722_012748",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.525
+  },
+  {
+    "episode": 10,
+    "reward": 3.383795845230261e-09,
+    "steps": 20,
+    "report_path": "reports/evaluation/20250722_012740/episode_10/report_20250722_012748",
+    "gear_count": 2,
+    "target_ratio": 0.5,
+    "achieved_ratio": 0.5
+  }
+]

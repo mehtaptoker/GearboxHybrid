@@ -1,110 +1,109 @@
 #!/bin/bash
 
-# Configuration
-VERBOSE=0  # Default verbosity level
-DATA_DIR="data/intermediate"
-REPORT_DIR="reports/$(date +%Y%m%d_%H%M%S)"
-MODEL_PATH="models/best_policy.pth"
-USE_GENERATED_DATA=0
+# Training script for gear generation model using train_torch.py
 
-# Hyperparameters
-LEARNING_RATE=0.001
+# Set default values from config.py
+LEARNING_RATE=0.0003
 BATCH_SIZE=64
 TOTAL_TIMESTEPS=1000000
 GAMMA=0.99
 EPSILON=0.2
-MAX_GEARS=10
-MAX_STEPS=1000
+MAX_GEARS=15
+MAX_STEPS_PER_EPISODE=20
 MIN_TEETH=8
-MAX_TEETH=60
+MAX_TEETH=40
+VERBOSE=0
+MODEL_PATH=""
+DATA_DIR=""
+GPU=""
 
-# Parse command line arguments
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --verbose=*)
-      VERBOSE="${1#*=}"
-      shift
-      ;;
-    --data-dir=*)
-      DATA_DIR="${1#*=}"
-      shift
-      ;;
-    --total-timesteps=*)
-      TOTAL_TIMESTEPS="${1#*=}"
-      shift
-      ;;
-    --use-generated-data)
-      USE_GENERATED_DATA=1
-      shift
-      ;;
-    *)
-      echo "Unknown parameter: $1"
-      exit 1
-      ;;
-  esac
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --gpu)
+            GPU="$2"
+            shift 2
+            ;;
+        --data-dir)
+            DATA_DIR="$2"
+            shift 2
+            ;;
+        --learning-rate)
+            LEARNING_RATE="$2"
+            shift 2
+            ;;
+        --batch-size)
+            BATCH_SIZE="$2"
+            shift 2
+            ;;
+        --total-timesteps)
+            TOTAL_TIMESTEPS="$2"
+            shift 2
+            ;;
+        --gamma)
+            GAMMA="$2"
+            shift 2
+            ;;
+        --epsilon)
+            EPSILON="$2"
+            shift 2
+            ;;
+        --max-gears)
+            MAX_GEARS="$2"
+            shift 2
+            ;;
+        --max-steps)
+            MAX_STEPS_PER_EPISODE="$2"
+            shift 2
+            ;;
+        --min-teeth)
+            MIN_TEETH="$2"
+            shift 2
+            ;;
+        --max-teeth)
+            MAX_TEETH="$2"
+            shift 2
+            ;;
+        --verbose)
+            VERBOSE="$2"
+            shift 2
+            ;;
+        --model-path)
+            MODEL_PATH="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
 done
 
-# Create directories
-mkdir -p "$REPORT_DIR"
-mkdir -p models
-mkdir -p logs
+# Build command with arguments
+CMD="python train_torch.py"
+[ -n "$GPU" ] && CMD="$CMD --gpu $GPU"
+[ -n "$DATA_DIR" ] && CMD="$CMD --data-dir $DATA_DIR"
+[ -n "$MODEL_PATH" ] && CMD="$CMD --model-path $MODEL_PATH"
+CMD="$CMD --learning-rate $LEARNING_RATE"
+CMD="$CMD --batch-size $BATCH_SIZE"
+CMD="$CMD --total-timesteps $TOTAL_TIMESTEPS"
+CMD="$CMD --gamma $GAMMA"
+CMD="$CMD --epsilon $EPSILON"
+CMD="$CMD --max-gears $MAX_GEARS"
+CMD="$CMD --max-steps $MAX_STEPS_PER_EPISODE"
+CMD="$CMD --min-teeth $MIN_TEETH"
+CMD="$CMD --max-teeth $MAX_TEETH"
+CMD="$CMD --verbose $VERBOSE"
 
-# Log file
-LOG_FILE="logs/train_$(date +%Y%m%d_%H%M%S).log"
-exec &> >(tee -a "$LOG_FILE")
+# Execute training command
+echo "Starting training with command:"
+echo "$CMD"
+eval "$CMD"
 
-# Train the model
-echo "Starting training..."
-echo "Using hyperparameters:"
-echo "  LEARNING_RATE: $LEARNING_RATE"
-echo "  BATCH_SIZE: $BATCH_SIZE"
-echo "  TOTAL_TIMESTEPS: $TOTAL_TIMESTEPS"
-echo "  GAMMA: $GAMMA"
-echo "  EPSILON: $EPSILON"
-echo "  MAX_GEARS: $MAX_GEARS"
-echo "  MAX_STEPS: $MAX_STEPS"
-echo "  MIN_TEETH: $MIN_TEETH"
-echo "  MAX_TEETH: $MAX_TEETH"
-
-# Check if a pre-trained model exists
-if [ -f "$MODEL_PATH" ]; then
-  echo "Found pre-trained model at $MODEL_PATH, continuing training."
-  MODEL_ARG="--model-path $MODEL_PATH"
+# Check exit status
+if [ $? -eq 0 ]; then
+    echo "Training completed successfully"
 else
-  echo "No pre-trained model found, starting from scratch."
-  MODEL_ARG=""
+    echo "Training failed with exit code $?"
+    exit 1
 fi
-
-# Build training command
-TRAIN_CMD="python train_torch.py \
-    --learning-rate $LEARNING_RATE \
-    --batch-size $BATCH_SIZE \
-    --total-timesteps $TOTAL_TIMESTEPS \
-    --gamma $GAMMA \
-    --epsilon $EPSILON \
-    --max-gears $MAX_GEARS \
-    --max-steps $MAX_STEPS \
-    --min-teeth $MIN_TEETH \
-    --max-teeth $MAX_TEETH \
-    --verbose $VERBOSE \
-    $MODEL_ARG"
-
-if [ "$USE_GENERATED_DATA" -eq 0 ]; then
-  TRAIN_CMD="$TRAIN_CMD --data-dir $DATA_DIR"
-fi
-
-eval $TRAIN_CMD
-
-# Move best model
-mv gear_generator_policy.pth "$MODEL_PATH"
-
-# Generate evaluation reports
-echo "Generating evaluation reports..."
-python evaluation.py \
-    --model "$MODEL_PATH" \
-    --data-dir "$DATA_DIR" \
-    --output-dir "$REPORT_DIR" \
-    --num-episodes 5 \
-    --max-gears $MAX_GEARS
-
-echo "Training complete!"

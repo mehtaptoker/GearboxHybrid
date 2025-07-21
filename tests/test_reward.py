@@ -1,88 +1,144 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from components import SystemState, Gear, Point
+import math
+from components import SystemState, Gear, Vector2D
 import physics
 import config
-import reward
+from reward import calculate_reward
 
 class TestRewardFunction(unittest.TestCase):
     def setUp(self):
-        # Create mock gears
-        self.input_gear = Gear(center=Point(0, 0), radius=10, num_teeth=20, is_driver=True)
-        self.output_gear = Gear(center=Point(30, 0), radius=10, num_teeth=10)
-        self.intermediate_gear = Gear(center=Point(15, 0), radius=5, num_teeth=10)
-        
-        # Create system state
+        # Create a minimal valid system state
         self.state = SystemState(
-            gears=[self.input_gear, self.output_gear],
-            boundary_poly=[],
-            connections={(0, 1): True},
-            target_ratio=2.0
+            boundary_poly=[Vector2D(0,0), Vector2D(100,0), Vector2D(100,100), Vector2D(0,100)],
+            gears=[],
+            connections=[],
+            input_shaft=Vector2D(10,10),
+            output_shaft=Vector2D(90,90),
+            target_ratio=2.0,
+            obstacles=[]
         )
         
-        # Mock physics functions
-        physics.calculate_gear_train_ratio = MagicMock(return_value=2.0)
-        physics.is_gear_inside_boundary = MagicMock(return_value=True)
-        physics.check_collision = MagicMock(return_value=False)
+        # Create mock gears
+        self.input_gear = Gear(
+            id=1,
+            center=Vector2D(10,10),
+            num_teeth=20,
+            module=1.0,
+            is_driver=True
+        )
         
-        # Reset config values
-        config.ALPHA = 1.0
-        config.BETA = 1.0
-        config.COLLISION_PENALTY = -100.0
-        config.P_GEAR_COUNT_PENALTY = -10.0
-        config.W_RATIO_SUCCESS = 500.0
-        config.MESHING_TOLERANCE = 0.1
-
-    def test_perfect_ratio_success(self):
-        """Test reward when ratio is perfect and connection is successful"""
-        reward_val = reward.calculate_reward(self.state, True)
+        self.output_gear = Gear(
+            id=2,
+            center=Vector2D(30,10),
+            num_teeth=40,
+            module=1.0
+        )
         
-        # Should get ratio reward (1.0) + success bonus (500) - no penalties
-        self.assertAlmostEqual(reward_val, 1.0 + 500.0)
+        self.intermediate_gear = Gear(
+            id=3,
+            center=Vector2D(20,10),
+            num_teeth=30,
+            module=1.0
+        )
         
-    def test_ratio_error(self):
-        """Test reward with ratio error"""
-        physics.calculate_gear_train_ratio.return_value = 2.5  # Target is 2.0
-        reward_val = reward.calculate_reward(self.state, True)
+        # Create connections
+        from components import Connection
+        self.connection1 = Connection(gear1=self.input_gear, gear2=self.intermediate_gear)
+        self.connection2 = Connection(gear1=self.intermediate_gear, gear2=self.output_gear)
         
-        # Ratio error penalty: exp(-1*(0.5^2)) = exp(-0.25) ≈ 0.7788
-        expected_ratio = 0.7788
-        self.assertAlmostEqual(reward_val, expected_ratio + 500.0, places=4)
+        # Mock get_gear_by_id method
+        self.state.get_gear_by_id = MagicMock(side_effect=lambda id: 
+            next((g for g in self.state.gears if g.id == id), None))
+    
+    @patch('physics.calculate_gear_train_ratio')
+    def test_torque_ratio_reward(self, mock_ratio):
+        """Test torque ratio reward component"""
+        self.state.gears = [self.input_gear, self.output_gear]
+        self.state.connections = []
         
+        # Test perfect match
+        mock_ratio.return_value = 2.0
+        reward = calculate_reward(self.state)
+        self.assertAlmostEqual(reward, 1.0, delta=0.01)
+        
+        # Test close match
+        mock_ratio.return_value = 2.1
+        reward = calculate_reward(self.state)
+        self.assertGreater(reward, 0.5)
+        self.assertLess(reward, 1.0)
+        
+        # Test poor match
+        mock_ratio.return_value = 3.0
+        reward = calculate_reward(self.state)
+        self.assertLess(reward, 0.1)
+    
     def test_connectivity_penalty(self):
-        """Test connectivity penalty for meshing gaps"""
-        # Add intermediate gear with connection issues
-        self.state.gears.append(self.intermediate_gear)
-        self.state.connections = {(0, 2): True, (2, 1): True}
+        """Test connectivity penalty component"""
+        # Create gears with perfect meshing
+        self.input_gear.center = Vector2D(10,10)
+        self.intermediate_gear.center = Vector2D(30,10)  # 20 units away (10+20=30)
+        self.output_gear.center = Vector2D(50,10)  # 20 units away (30+20=50)
         
-        # Calculate reward - the connectivity penalty will be applied
-        reward_val = reward.calculate_reward(self.state, True)
+        self.state.gears = [self.input_gear, self.intermediate_gear, self.output_gear]
+        self.state.connections = [self.connection1, self.connection2]
         
-        # Should have connectivity penalty in addition to other rewards
-        self.assertLess(reward_val, 1.0 + 500.0 - 10.0)  # Gear count penalty also applies
+        # Calculate reward with perfect meshing
+        reward_perfect = calculate_reward(self.state)
         
+        # Introduce meshing errors
+        self.intermediate_gear.center = Vector2D(31,10)  # 1mm gap
+        reward_gap = calculate_reward(self.state)
+        
+        # Verify penalty is proportional to total gap
+        self.assertLess(reward_gap, reward_perfect)
+        self.assertAlmostEqual(reward_perfect - reward_gap, config.BETA * 1.0, delta=0.01)
+        
+        # Test with no connections
+        self.state.connections = []
+        reward_no_connections = calculate_reward(self.state)
+        self.assertAlmostEqual(reward_no_connections, config.COLLISION_PENALTY, delta=0.01)
+    
     def test_collision_penalty(self):
-        """Test collision penalty"""
-        physics.is_gear_inside_boundary.return_value = False
-        reward_val = reward.calculate_reward(self.state, True)
+        """Test collision penalty component"""
+        self.state.gears = [self.input_gear, self.output_gear]
+        self.state.connections = []
         
-        # Should have collision penalty
-        self.assertAlmostEqual(reward_val, 1.0 + 500.0 + config.COLLISION_PENALTY)
+        # Test without collisions
+        with patch('physics.check_collision', return_value=False):
+            reward_no_collision = calculate_reward(self.state)
         
-    def test_gear_count_penalty(self):
-        """Test penalty for additional gears"""
-        self.state.gears.append(self.intermediate_gear)
-        reward_val = reward.calculate_reward(self.state, True)
+        # Test with collisions
+        with patch('physics.check_collision', return_value=True):
+            reward_collision = calculate_reward(self.state)
         
-        # Should have gear count penalty
-        self.assertAlmostEqual(reward_val, 1.0 + 500.0 + config.P_GEAR_COUNT_PENALTY)
+        # Verify large constant penalty applied
+        self.assertAlmostEqual(reward_collision, reward_no_collision + config.COLLISION_PENALTY, delta=0.01)
+    
+    def test_composite_reward(self):
+        """Test the composite reward calculation"""
+        self.state.gears = [self.input_gear, self.output_gear]
+        self.state.connections = []
         
-    def test_no_success_bonus(self):
-        """Test case where connection fails"""
-        reward_val = reward.calculate_reward(self.state, False)
+        # Mock dependencies
+        with patch('physics.calculate_gear_train_ratio', return_value=2.0), \
+             patch('physics.check_collision', return_value=False):
+            
+            # Create perfect scenario
+            self.input_gear.center = Vector2D(10,10)
+            self.output_gear.center = Vector2D(30,10)  # Perfect distance (20mm)
+            reward_perfect = calculate_reward(self.state)
+            
+            # Create scenario with issues
+            self.output_gear.center = Vector2D(31,10)  # 1mm gap
+            with patch('physics.check_collision', return_value=True):  # Collision
+                reward_imperfect = calculate_reward(self.state)
         
-        # Should not have success bonus
-        self.assertAlmostEqual(reward_val, 1.0)
+        # Verify composite reward includes all components
+        self.assertAlmostEqual(reward_perfect, 1.0, delta=0.01)
+        self.assertAlmostEqual(reward_imperfect, 
+                               1.0 - config.BETA * 1.0 + config.COLLISION_PENALTY, 
+                               delta=0.01)
 
 if __name__ == '__main__':
     unittest.main()

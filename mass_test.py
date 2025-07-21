@@ -1,6 +1,6 @@
 from components import Gear, Vector2D
 import config
-import visualization
+from visualization import render_system
 
 # Create a sample gear
 gear = Gear(
@@ -25,5 +25,5 @@ print(f"Gear with {gear.num_teeth} teeth has mass: {mass:.2f}g")
 
 # Visualize the gear
 system_state = MockSystemState()
-visualization.render(system_state, "mass_test.png")
+render_system(system_state, "mass_test.png")
 print("Visualization saved to mass_test.png")

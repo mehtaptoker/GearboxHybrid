@@ -1,0 +1,94 @@
+{
+  "gears": [
+    {
+      "id": 1,
+      "center": {
+        "x": 0,
+        "y": 0
+      },
+      "num_teeth": 20,
+      "module": 1.0,
+      "pressure_angle": 20.0,
+      "z_layer": 0,
+      "is_driver": true,
+      "connected_gears": []
+    },
+    {
+      "id": 2,
+      "center": {
+        "x": 100,
+        "y": 0
+      },
+      "num_teeth": 30,
+      "module": 1.0,
+      "pressure_angle": 20.0,
+      "z_layer": 0,
+      "is_driver": false,
+      "connected_gears": []
+    },
+    {
+      "id": 1000,
+      "center": {
+        "x": 28.343456700009742,
+        "y": -18.026082370713528
+      },
+      "num_teeth": 47,
+      "module": 1.0,
+      "pressure_angle": 20.0,
+      "z_layer": 0,
+      "is_driver": false,
+      "connected_gears": []
+    },
+    {
+      "id": 1001,
+      "center": {
+        "x": -6398.391076881357,
+        "y": -4370.193495308114
+      },
+      "num_teeth": 15476,
+      "module": 1.0,
+      "pressure_angle": 20.0,
+      "z_layer": 0,
+      "is_driver": false,
+      "connected_gears": []
+    }
+  ],
+  "obstacles": [
+    [
+      {
+        "x": 30,
+        "y": -20
+      },
+      {
+        "x": 30,
+        "y": 20
+      },
+      {
+        "x": 70,
+        "y": 20
+      },
+      {
+        "x": 70,
+        "y": -20
+      }
+    ],
+    [
+      {
+        "x": 40,
+        "y": 10
+      },
+      {
+        "x": 40,
+        "y": 30
+      },
+      {
+        "x": 60,
+        "y": 30
+      },
+      {
+        "x": 60,
+        "y": 10
+      }
+    ]
+  ]
+}

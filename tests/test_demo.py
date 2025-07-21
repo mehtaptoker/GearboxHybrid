@@ -1,7 +1,7 @@
 import random
 from components import Gear, Vector2D, SystemState
 from data_generator import generate_scenario
-from physics import calculate_gear_train, check_meshing, is_inside_boundary
+from physics import calculate_gear_train_ratio, check_meshing, is_gear_inside_boundary
 from visualization import render_system as render
 
 # Generate a mock scenario
@@ -78,10 +78,10 @@ system_state = SystemState(
 print("\nPhysics tests:")
 print(f"Driver-idler meshing: {check_meshing(driver_gear, idler_gear)}")
 print(f"Idler-output meshing: {check_meshing(idler_gear, output_gear)}")
-all_inside = all(is_inside_boundary(g.center, system_state.boundary_poly) for g in system_state.gears)
+all_inside = all(is_gear_inside_boundary(g, system_state.boundary_poly) for g in system_state.gears)
 print(f"Gears inside boundary: {all_inside}")
 
-ratio = calculate_gear_train(system_state.gears, driver_gear.id, output_gear.id)
+ratio = calculate_gear_train_ratio(system_state.gears, driver_gear.id)
 print(f"Calculated gear ratio: {ratio}")
 
 # Visualize the result

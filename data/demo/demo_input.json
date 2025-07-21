@@ -1,0 +1,1 @@
+{"start_gear":{"id":1,"center":{"x":50,"y":50},"num_teeth":20,"module":2,"is_driver":true},"end_gear":{"id":2,"center":{"x":150,"y":50},"num_teeth":30,"module":2},"obstacles":[],"boundary":[{"x":0,"y":0},{"x":200,"y":0},{"x":200,"y":200},{"x":0,"y":200}]}

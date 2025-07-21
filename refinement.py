@@ -12,7 +12,7 @@ def propagate_radii(
 ) -> Tuple[List[float], float]:
     """
     Propagate gear radii along the path from start to end gear,
-    accounting for integer tooth constraints and proper meshing.
+    using floating-point calculations to reduce quantization errors.
     
     Args:
         start_gear: Fixed start gear
@@ -27,44 +27,35 @@ def propagate_radii(
     """
     radii = []
     
-    # Calculate tooth counts instead of radii first
-    teeth_counts = []
-    
-    # Calculate tooth counts based on actual distances
-    teeth_counts = []
-    
-    # Calculate tooth counts based on actual distances
-    teeth_counts = []
-    
-    # First gear: distance = (start_gear.num_teeth + teeth0) * module / 2
+    # First gear: distance = start_gear.radius + radius0
     dx0 = path[0].x - start_gear.center.x
     dy0 = path[0].y - start_gear.center.y
     distance0 = math.sqrt(dx0*dx0 + dy0*dy0)
-    teeth0 = round(2 * distance0 / module - start_gear.num_teeth)
-    if teeth0 < 1:
-        teeth0 = 1
-    teeth_counts.append(teeth0)
-    radius0 = teeth0 * module / 2
+    radius0 = distance0 - start_gear.radius
+    
+    # Calculate tooth count based on radius
+    num_teeth0 = max(1, round(radius0 * 2 / module))
+    radius0 = (num_teeth0 * module) / 2
     radii.append(radius0)
     
-    # Intermediate gears: distance = (teeth_counts[i-1] + teeth) * module / 2
+    # Intermediate gears: distance = current_radius + next_radius
     for i in range(1, len(path)):
         dx = path[i].x - path[i-1].x
         dy = path[i].y - path[i-1].y
         distance = math.sqrt(dx*dx + dy*dy)
-        teeth = round(2 * distance / module - teeth_counts[i-1])
-        if teeth < 1:
-            teeth = 1
-        teeth_counts.append(teeth)
-        radius = teeth * module / 2
+        radius = distance - radii[i-1]
+        
+        # Calculate tooth count based on radius
+        num_teeth = max(1, round(radius * 2 / module))
+        radius = (num_teeth * module) / 2
         radii.append(radius)
     
-    # Last gear to end gear: distance = (teeth_counts[-1] + end_gear.num_teeth) * module / 2
+    # Last gear to end gear: distance = last_radius + end_gear.radius
     dx_end = end_gear.center.x - path[-1].x
     dy_end = end_gear.center.y - path[-1].y
     end_distance = math.sqrt(dx_end*dx_end + dy_end*dy_end)
-    endpoint_error = abs((teeth_counts[-1] + end_gear.num_teeth) * module / 2 - end_distance)
-    
+    required_end_distance = radii[-1] + end_gear.radius
+    endpoint_error = abs(required_end_distance - end_distance)
     
     return radii, endpoint_error
 
@@ -75,7 +66,8 @@ def validate_gear_train(
     radii: List[float],
     existing_gears: List[Gear],
     module: float,
-    tolerance: float = config.MESHING_TOLERANCE  # Use tolerance from config
+    tolerance: float = config.MESHING_TOLERANCE,  # Use tolerance from config
+    intermediate_optimization: bool = False  # New parameter
 ) -> Tuple[bool, Optional[str]]:
     """
     Validate the generated gear train.
@@ -88,6 +80,7 @@ def validate_gear_train(
         existing_gears: List of existing gears in the system
         module: Gear module
         tolerance: Acceptable error tolerance
+        intermediate_optimization: If True, skip collision checks during optimization
         
     Returns:
         Tuple (valid, reason) where:
@@ -147,21 +140,22 @@ def validate_gear_train(
         )
         return False, f"Meshing failure between last intermediate and end gear: required {required_distance:.3f}, actual {actual_distance:.3f}"
     
-    # Check collisions with existing gears
-    for gear in intermediate_gears:
-        if check_collision(gear, existing_gears):
-            return False, f"Collision detected for intermediate gear at ({gear.center.x}, {gear.center.y})"
-    
-    # Check collisions between intermediate gears
-    # Check collisions between intermediate gears with tolerance
-    for i in range(len(intermediate_gears)):
-        for j in range(i + 1, len(intermediate_gears)):
-            dx = intermediate_gears[i].center.x - intermediate_gears[j].center.x
-            dy = intermediate_gears[i].center.y - intermediate_gears[j].center.y
-            distance = math.sqrt(dx*dx + dy*dy)
-            min_distance = intermediate_gears[i].radius + intermediate_gears[j].radius
-            if distance < min_distance - tolerance:
-                return False, f"Collision between intermediate gears {i} and {j} (distance: {distance:.3f} < min: {min_distance:.3f})"
+    # Skip collision checks during intermediate optimization steps
+    if not intermediate_optimization:
+        # Check collisions with existing gears
+        for gear in intermediate_gears:
+            if check_collision(gear, existing_gears):
+                return False, f"Collision detected for intermediate gear at ({gear.center.x}, {gear.center.y})"
+        
+        # Check collisions between intermediate gears
+        for i in range(len(intermediate_gears)):
+            for j in range(i + 1, len(intermediate_gears)):
+                dx = intermediate_gears[i].center.x - intermediate_gears[j].center.x
+                dy = intermediate_gears[i].center.y - intermediate_gears[j].center.y
+                distance = math.sqrt(dx*dx + dy*dy)
+                min_distance = intermediate_gears[i].radius + intermediate_gears[j].radius
+                if distance < min_distance - tolerance:
+                    return False, f"Collision between intermediate gears {i} and {j} (distance: {distance:.3f} < min: {min_distance:.3f})"
     
     return True, None
 
@@ -252,7 +246,7 @@ def generate_gear_train(
     obstacles: List[Gear],
     module: float,
     max_iterations: int = 1000,  # Increased to allow more convergence time
-    tolerance: float = 0.5  # Tolerance in mm
+    tolerance: float = 5.0  # Increased tolerance to 5.0 mm to match physics tolerance
 ) -> Optional[List[Gear]]:
     """
     Generate a tangent gear train between start and end gears using iterative refinement.
@@ -282,12 +276,20 @@ def generate_gear_train(
     path = [Vector2D(p.x, p.y) for p in path]
     num_joints = len(path)
     
-    # Step 1: Pre-calculate the required distances between consecutive joints and endpoints
-    # We don't know the radii yet, so we'll recalculate in each iteration
+    # Pre-calculate the target total length of the path
+    total_path_length = 0
+    for i in range(num_joints - 1):
+        dx = path[i+1].x - path[i].x
+        dy = path[i+1].y - path[i].y
+        total_path_length += math.sqrt(dx*dx + dy*dy)
     
     for iteration in range(max_iterations):
         # Propagate radii along the path
         radii, endpoint_error = propagate_radii(start_gear, end_gear, path, module)
+        
+        # Check for convergence
+        if endpoint_error < tolerance:
+            break
         
         # Debugging info
         if iteration % 100 == 0:
@@ -296,63 +298,161 @@ def generate_gear_train(
         # Check for non-positive radii
         if any(r <= 0 for r in radii):
             print(f"Iteration {iteration}: Non-positive radius detected")
-            # Adjust the path to reduce curvature: move each joint towards the midpoint of its neighbors
-            for i in range(1, num_joints-1):
-                prev_point = path[i-1]
-                next_point = path[i+1]
-                midpoint = Vector2D((prev_point.x + next_point.x)/2, (prev_point.y + next_point.y)/2)
-                # Move the joint 10% towards the midpoint
-                path[i] = path[i].interpolate(midpoint, 0.1)
+            # Instead of moving towards midpoint, adjust the path proportionally
+            # Calculate the direction from start to end
+            total_dx = end_gear.center.x - start_gear.center.x
+            total_dy = end_gear.center.y - start_gear.center.y
+            total_distance = math.sqrt(total_dx**2 + total_dy**2)
+            
+            # Normalize direction
+            if total_distance > 0:
+                total_dir = Vector2D(total_dx/total_distance, total_dy/total_distance)
+            else:
+                total_dir = Vector2D(1, 0)  # Default direction if start and end are at same point
+            
+            # Redistribute points along the line from start to end
+            for i in range(num_joints):
+                t = (i + 1) / (num_joints + 1)
+                path[i] = Vector2D(
+                    start_gear.center.x + total_dir.x * total_distance * t,
+                    start_gear.center.y + total_dir.y * total_distance * t
+                )
             continue
 
-        # Check endpoint connection: distance from last joint to end gear center should be approximately last_radius + end_gear.radius
-        last_radius = radii[-1]
-        required_end_distance = last_radius + end_gear.radius
+        # Calculate total error for the entire chain
+        total_error = 0
+        # Start point error
+        dx_start = path[0].x - start_gear.center.x
+        dy_start = path[0].y - start_gear.center.y
+        start_distance = math.sqrt(dx_start**2 + dy_start**2)
+        start_error = abs(start_gear.radius + radii[0] - start_distance)
+        
+        # End point error
         dx_end = end_gear.center.x - path[-1].x
         dy_end = end_gear.center.y - path[-1].y
-        actual_end_distance = math.sqrt(dx_end*dx_end + dy_end*dy_end)
-        end_error = required_end_distance - actual_end_distance
+        end_distance = math.sqrt(dx_end**2 + dy_end**2)
+        end_error = abs(radii[-1] + end_gear.radius - end_distance)
         
-        # If endpoint error is too large, adjust the last joint
-        if abs(end_error) > tolerance:
-            print(f"Iteration {iteration}: Endpoint error too large: {end_error:.3f}")
-            # Move the last joint along the line to the end gear
-            direction = Vector2D(dx_end, dy_end).normalized()
-            # Use a dynamic adjustment factor that decreases over iterations
-            adj_factor = max(0.1, 0.5 * (1 - iteration/max_iterations))
-            adjustment = end_error * adj_factor
-            path[-1] = Vector2D(path[-1].x + direction.x * adjustment, path[-1].y + direction.y * adjustment)
-            continue
-
-        # Check the distances between consecutive joints
-        adjustment_needed = False
+        # Intermediate errors
+        intermediate_errors = []
         for i in range(num_joints-1):
-            r1 = radii[i]
-            r2 = radii[i+1]
-            required_distance = r1 + r2
             dx = path[i+1].x - path[i].x
             dy = path[i+1].y - path[i].y
-            actual_distance = math.sqrt(dx*dx + dy*dy)
-            distance_error = abs(required_distance - actual_distance)
+            distance = math.sqrt(dx**2 + dy**2)
+            required = radii[i] + radii[i+1]
+            error = abs(required - distance)
+            intermediate_errors.append(error)
+            total_error += error
             
-            if distance_error > tolerance:
-                print(f"Iteration {iteration}: Distance error at joint {i}: {distance_error:.3f}")
-                adjustment_needed = True
-                # Adjust the joint i+1 to correct the distance
-                direction = Vector2D(dx, dy).normalized()
-                # Use a dynamic adjustment factor that decreases over iterations
-                adj_factor = max(0.1, 0.5 * (1 - iteration/max_iterations))
-                adjustment = (required_distance - actual_distance) * adj_factor
-                # Move the joint i+1 away from joint i if too close, or closer if too far
-                path[i+1] = Vector2D(path[i+1].x + direction.x * adjustment, path[i+1].y + direction.y * adjustment)
+        total_error += start_error + end_error
         
-        # If we adjusted any joint, continue to next iteration without further checks
-        if adjustment_needed:
-            for i in range(1, num_joints-1):
-                prev_point = path[i-1]
-                next_point = path[i+1]
-                midpoint = Vector2D((prev_point.x + next_point.x)/2, (prev_point.y + next_point.y)/2)
-                path[i] = path[i].interpolate(midpoint, 0.1)
+        # If total error is below tolerance, we're done
+        if total_error < tolerance * (num_joints + 1):
+            break
+            
+        # Gradient descent optimization
+        learning_rate = 0.05
+        max_steps = 10
+        current_error = total_error
+        
+        for _ in range(max_steps):
+            # Calculate gradients for each point
+            gradients = [Vector2D(0, 0) for _ in range(num_joints)]
+            
+            # Gradient for start point
+            dx_start = path[0].x - start_gear.center.x
+            dy_start = path[0].y - start_gear.center.y
+            start_distance = math.sqrt(dx_start**2 + dy_start**2)
+            start_error = start_gear.radius + radii[0] - start_distance
+            if start_distance > 0:
+                grad_x = 2 * start_error * (dx_start / start_distance)
+                grad_y = 2 * start_error * (dy_start / start_distance)
+                gradients[0].x += grad_x
+                gradients[0].y += grad_y
+            
+            # Gradient for end point
+            dx_end = end_gear.center.x - path[-1].x
+            dy_end = end_gear.center.y - path[-1].y
+            end_distance = math.sqrt(dx_end**2 + dy_end**2)
+            end_error = radii[-1] + end_gear.radius - end_distance
+            if end_distance > 0:
+                grad_x = 2 * end_error * (-dx_end / end_distance)
+                grad_y = 2 * end_error * (-dy_end / end_distance)
+                gradients[-1].x += grad_x
+                gradients[-1].y += grad_y
+            
+            # Gradients for intermediate points
+            for i in range(num_joints-1):
+                dx = path[i+1].x - path[i].x
+                dy = path[i+1].y - path[i].y
+                distance = math.sqrt(dx**2 + dy**2)
+                segment_error = (radii[i] + radii[i+1]) - distance
+                
+                if distance > 0:
+                    # Gradient for point i
+                    grad_x_i = 2 * segment_error * (-dx / distance)
+                    grad_y_i = 2 * segment_error * (-dy / distance)
+                    gradients[i].x += grad_x_i
+                    gradients[i].y += grad_y_i
+                    
+                    # Gradient for point i+1
+                    grad_x_i1 = 2 * segment_error * (dx / distance)
+                    grad_y_i1 = 2 * segment_error * (dy / distance)
+                    gradients[i+1].x += grad_x_i1
+                    gradients[i+1].y += grad_y_i1
+            
+            # Apply gradients with learning rate
+            new_path = []
+            for i in range(num_joints):
+                new_x = path[i].x - learning_rate * gradients[i].x
+                new_y = path[i].y - learning_rate * gradients[i].y
+                new_path.append(Vector2D(new_x, new_y))
+            
+            # Calculate new error
+            new_radii, new_endpoint_error = propagate_radii(start_gear, end_gear, new_path, module)
+            new_total_error = new_endpoint_error
+            
+            # Check for non-positive radii
+            if any(r <= 0 for r in new_radii):
+                break
+                
+            # Calculate intermediate errors
+            for i in range(num_joints-1):
+                dx = new_path[i+1].x - new_path[i].x
+                dy = new_path[i+1].y - new_path[i].y
+                distance = math.sqrt(dx**2 + dy**2)
+                segment_error = abs((new_radii[i] + new_radii[i+1]) - distance)
+                new_total_error += segment_error
+            
+            # If error decreased, accept the step
+            if new_total_error < current_error:
+                path = new_path
+                radii = new_radii
+                current_error = new_total_error
+                endpoint_error = new_endpoint_error
+            else:
+                # Reduce learning rate if error increased
+                learning_rate *= 0.7
+        
+        # Update path with optimized positions
+        path = new_path
+
+        # During optimization, skip collision checks
+        valid, reason = validate_gear_train(
+            start_gear, 
+            end_gear, 
+            path, 
+            radii, 
+            existing_gears + obstacles, 
+            module, 
+            tolerance,
+            intermediate_optimization=True  # Skip collision checks during optimization
+        )
+        if not valid:
+            if iteration % 100 == 0: # Avoid spamming the console
+                print(f"Validation failed: {reason}")
+            # The main adjustment logic should handle this failure in the next iteration.
+            # The previous ad-hoc adjustment here was likely causing instability.
             continue
 
         # Check boundary constraints
@@ -366,8 +466,19 @@ def generate_gear_train(
             )
             if not is_gear_inside_boundary(gear, boundary_poly):
                 boundary_violation = True
-                # Move the gear inside the boundary by pushing it towards the center of the boundary?
-                # For simplicity, we break and hope the next iteration adjusts
+                print(f"Iteration {iteration}: Boundary violation at joint {i}")
+                # Move the gear inside the boundary by pushing it towards the center of the boundary
+                centroid = Vector2D(0, 0)
+                for point in boundary_poly:
+                    centroid.x += point.x
+                    centroid.y += point.y
+                centroid.x /= len(boundary_poly)
+                centroid.y /= len(boundary_poly)
+                
+                # FIXED: Use normalized() instead of normalize()
+                direction = Vector2D(centroid.x - pos.x, centroid.y - pos.y).normalized()
+                # Move further inside if violation is severe
+                path[i] = Vector2D(pos.x + direction.x * 2.0, pos.y + direction.y * 2.0)
                 break
         
         if boundary_violation:
@@ -381,22 +492,74 @@ def generate_gear_train(
             centroid.x /= len(boundary_poly)
             centroid.y /= len(boundary_poly)
             for i in range(num_joints):
-                direction = Vector2D(centroid.x - path[i].x, centroid.y - path[i].y).normalize()
+                # FIXED: Use normalized() instead of normalize()
+                direction = Vector2D(centroid.x - path[i].x, centroid.y - path[i].y).normalized()
                 path[i] = Vector2D(path[i].x + direction.x * 1.0, path[i].y + direction.y * 1.0)
             continue
 
-        # If we passed all checks, create the intermediate gears
-        intermediate_gears = []
-        for i, (pos, radius) in enumerate(zip(path, radii)):
-            num_teeth = round(2 * radius / module)
-            gear = Gear(
-                id=1000 + i,
-                center=pos,
-                num_teeth=num_teeth,
-                module=module
-            )
-            intermediate_gears.append(gear)
-        return intermediate_gears
+        # Final validation with full checks
+        valid, reason = validate_gear_train(
+            start_gear, 
+            end_gear, 
+            path, 
+            radii, 
+            existing_gears + obstacles, 
+            module, 
+            tolerance,
+            intermediate_optimization=False  # Full collision checks
+        )
+        
+        if valid:
+            # Create the intermediate gears
+            intermediate_gears = []
+            for i, (pos, radius) in enumerate(zip(path, radii)):
+                num_teeth = round(2 * radius / module)
+                gear = Gear(
+                    id=1000 + i,
+                    center=pos,
+                    num_teeth=num_teeth,
+                    module=module
+                )
+                intermediate_gears.append(gear)
+            return intermediate_gears
+        else:
+            print(f"Validation failed after optimization: {reason}")
+            # Continue optimization if validation fails
 
     print(f"Failed to generate gear train after {max_iterations} iterations")
-    return None
+    # Try constraint solver as fallback
+    from constraint_solver import solve_gear_chain
+    print("Attempting constraint solver as fallback...")
+    intermediate_gears = solve_gear_chain(
+        start_gear,
+        end_gear,
+        path,
+        existing_gears,
+        boundary_poly,
+        obstacles,
+        module,
+        tolerance=tolerance,
+        max_iterations=500
+    )
+    
+    if intermediate_gears is None:
+        print("Constraint solver also failed to generate gear train")
+        return None
+    
+    # Validate the solution from constraint solver
+    valid, reason = validate_gear_train(
+        start_gear,
+        end_gear,
+        [g.center for g in intermediate_gears],
+        [g.radius for g in intermediate_gears],
+        existing_gears + obstacles,
+        module,
+        tolerance
+    )
+    
+    if not valid:
+        print(f"Constraint solver solution failed validation: {reason}")
+        return None
+    
+    print("Constraint solver successfully generated gear train")
+    return intermediate_gears

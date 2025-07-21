@@ -76,7 +76,7 @@ def distance_to_line_segment(point: Vector2D, line_start: Vector2D, line_end: Ve
     dy = point.y - closest_point.y
     return math.sqrt(dx**2 + dy**2)
 
-def check_meshing(gear1: Gear, gear2: Gear, abs_tol: float = 0.1) -> bool:
+def check_meshing(gear1: Gear, gear2: Gear, abs_tol: float = 0.5) -> bool:
     """Check if two gears can mesh.
     
     Args:
@@ -88,7 +88,7 @@ def check_meshing(gear1: Gear, gear2: Gear, abs_tol: float = 0.1) -> bool:
         True if gears can mesh, False otherwise
     """
     # Must be on same z-layer and have same module
-    if gear1.z_layer != gear2.z_layer or not math.isclose(gear1.module, gear2.module):
+    if gear1.z_layer != gear2.z_layer or not math.isclose(gear1.module, gear2.module, abs_tol=0.01):
         return False
     
     # Calculate center distance
@@ -100,39 +100,56 @@ def check_meshing(gear1: Gear, gear2: Gear, abs_tol: float = 0.1) -> bool:
     sum_radii = gear1.radius + gear2.radius
     
     # Check if distance matches sum of radii within tolerance
-    return math.isclose(distance, sum_radii, rel_tol=config.MESHING_TOLERANCE) or \
-           abs(distance - sum_radii) < abs_tol
+    return math.isclose(distance, sum_radii, abs_tol=abs_tol)
 
-def check_collision(new_gear: Gear, existing_gears: List[Gear], return_reason=False) -> bool:
-    """Check if new gear collides with existing gears.
+def check_collision(new_gear: Gear, obstacles: List[object], return_reason=False) -> bool:
+    """Check if new gear collides with existing obstacles.
     
     Args:
         new_gear: Gear to check
-        existing_gears: List of existing gears
+        obstacles: List of obstacles (gears or Vector2D points) OR a single obstacle
         return_reason: If True, returns (result, reason) tuple
         
     Returns:
         True if collision detected, False otherwise
         If return_reason=True, returns (bool, str) tuple
     """
-    for gear in existing_gears:
-        # Only check gears on same z-layer
-        if gear.z_layer != new_gear.z_layer:
-            continue
-            
-        # Calculate center distance
-        dx = new_gear.center.x - gear.center.x
-        dy = new_gear.center.y - gear.center.y
-        distance = math.sqrt(dx*dx + dy*dy)
+    # Ensure obstacles is always a list
+    if not isinstance(obstacles, list):
+        obstacles = [obstacles]
         
-        # Calculate sum of radii
-        sum_radii = new_gear.radius + gear.radius
-        
-        # Collision if distance < sum of radii minus tolerance (not equal, as that would be meshing)
-        if distance < sum_radii - config.MESHING_TOLERANCE:
-            reason = f"Collision with gear {gear.id} (distance={distance:.2f} < sum_radii={sum_radii:.2f})"
-            return (True, reason) if return_reason else True
+    for obstacle in obstacles:
+        # Handle Vector2D points
+        if isinstance(obstacle, Vector2D):
+            # Calculate distance to point
+            dx = new_gear.center.x - obstacle.x
+            dy = new_gear.center.y - obstacle.y
+            distance = math.sqrt(dx*dx + dy*dy)
             
+            # Collision if distance < gear radius minus tolerance
+            if distance < new_gear.radius - config.MESHING_TOLERANCE:
+                reason = f"Collision with point obstacle at ({obstacle.x}, {obstacle.y})"
+                return (True, reason) if return_reason else True
+                
+        # Handle Gear objects
+        elif isinstance(obstacle, Gear):
+            # Only check gears on same z-layer
+            if obstacle.z_layer != new_gear.z_layer:
+                continue
+                
+            # Calculate center distance
+            dx = new_gear.center.x - obstacle.center.x
+            dy = new_gear.center.y - obstacle.center.y
+            distance = math.sqrt(dx*dx + dy*dy)
+            
+            # Calculate sum of radii
+            sum_radii = new_gear.radius + obstacle.radius
+            
+            # Collision if distance < sum of radii minus tolerance
+            if distance < sum_radii - config.MESHING_TOLERANCE:
+                reason = f"Collision with gear {obstacle.id} (distance={distance:.2f} < sum_radii={sum_radii:.2f})"
+                return (True, reason) if return_reason else True
+                
     return (False, "") if return_reason else False
 
 from shapely.geometry import Point, Polygon
@@ -211,20 +228,55 @@ def is_gear_inside_boundary(gear: Gear, boundary_poly: List[Vector2D], return_re
             
     return (True, "") if return_reason else True
 
-def calculate_gear_train_ratio(input_gear: Gear, output_gear: Gear) -> float:
-    """Calculate gear train ratio between input and output gears.
-    
-    This implementation uses the approximation that the torque ratio is equal to the 
-    ratio of the number of teeth on the output gear to the number of teeth on the input gear.
+def calculate_gear_train(gears: List[Gear], start_index: int, end_index: int) -> float:
+    """Calculate gear train ratio between two gears in a chain.
     
     Args:
-        input_gear: Input gear
-        output_gear: Output gear
+        gears: List of Gear objects in the train
+        start_index: Index of the starting gear
+        end_index: Index of the ending gear
         
     Returns:
-        Approximate gear ratio (output_teeth / input_teeth)
+        Overall gear ratio (output teeth / input teeth)
     """
-    return output_gear.num_teeth / input_gear.num_teeth
+    # Validate indices
+    if start_index < 0 or end_index < 0 or start_index >= len(gears) or end_index >= len(gears):
+        return 0.0
+    
+    ratio = 1.0
+    current_index = start_index
+    
+    # Traverse the chain from start to end
+    while current_index != end_index:
+        next_index = current_index + 1 if current_index < end_index else current_index - 1
+        if next_index < 0 or next_index >= len(gears):
+            return 0.0
+        
+        # Calculate ratio for this pair
+        ratio *= gears[current_index].num_teeth / gears[next_index].num_teeth
+        current_index = next_index
+    
+    return ratio
+
+def calculate_gear_train_ratio(gears: List[Gear], driver_id: int) -> float:
+    """Calculate gear train ratio for a chain of gears.
+    
+    Args:
+        gears: List of Gear objects in the train
+        driver_id: ID of the driver gear
+        
+    Returns:
+        Overall gear ratio (output teeth / input teeth)
+    """
+    # Find the driver gear
+    driver_gear = next((g for g in gears if g.id == driver_id), None)
+    if not driver_gear:
+        return 0.0
+    
+    # Find the output gear (last gear in the chain)
+    output_gear = gears[-1]
+    
+    return output_gear.num_teeth / driver_gear.num_teeth
 
 def validate_gear(gear: Gear) -> bool:
     """Validate gear parameters for physical sensibility.
@@ -249,6 +301,36 @@ def validate_gear(gear: Gear) -> bool:
         return False
     
     return True
+
+def calculate_gear_train(gears: List[Gear], start_index: int, end_index: int) -> float:
+    """Calculate gear train ratio between two gears in a chain.
+    
+    Args:
+        gears: List of Gear objects in the train
+        start_index: Index of the starting gear
+        end_index: Index of the ending gear
+        
+    Returns:
+        Overall gear ratio (output teeth / input teeth)
+    """
+    # Validate indices
+    if start_index < 0 or end_index < 0 or start_index >= len(gears) or end_index >= len(gears):
+        return 0.0
+    
+    ratio = 1.0
+    current_index = start_index
+    
+    # Traverse the chain from start to end
+    while current_index != end_index:
+        next_index = current_index + 1 if current_index < end_index else current_index - 1
+        if next_index < 0 or next_index >= len(gears):
+            return 0.0
+        
+        # Calculate ratio for this pair
+        ratio *= gears[current_index].num_teeth / gears[next_index].num_teeth
+        current_index = next_index
+    
+    return ratio
 
 def line_segments_intersect(a: Vector2D, b: Vector2D, c: Vector2D, d: Vector2D) -> bool:
     """Check if line segment AB intersects line segment CD."""

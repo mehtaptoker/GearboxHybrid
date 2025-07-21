@@ -32,29 +32,37 @@ def iterative_path_refinement(start_gear, end_gear, boundary: List[Vector2D],
     # Get workspace boundaries from config
     half_workspace = config.WORKSPACE_SIZE / 2.0
     
-    # Always add at least one intermediate point if direct connection isn't possible
-    if direct_dist > min_required_dist:
-        # Add two intermediate points to form a smoother path
-        quarter1 = Vector2D(
-            start.x + (end.x - start.x) * 0.25,
-            start.y + (end.y - start.y) * 0.25
-        )
-        quarter3 = Vector2D(
-            start.x + (end.x - start.x) * 0.75,
-            start.y + (end.y - start.y) * 0.75
-        )
-        # Clamp points to workspace boundaries
-        quarter1.x = max(-half_workspace, min(half_workspace, quarter1.x))
-        quarter1.y = max(-half_workspace, min(half_workspace, quarter1.y))
-        quarter3.x = max(-half_workspace, min(half_workspace, quarter3.x))
-        quarter3.y = max(-half_workspace, min(half_workspace, quarter3.y))
-        path.extend([quarter1, quarter3, end])
+    # Generate initial path with minimum required gear spacing
+    path = [start]
+    direction = Vector2D(end.x - start.x, end.y - start.y)
+    if direction.x == 0 and direction.y == 0:
+        direction = Vector2D(1, 0)  # Default direction
     else:
-        # For close points, just use midpoint
-        midpoint = Vector2D((start.x + end.x)/2, (start.y + end.y)/2)
-        midpoint.x = max(-half_workspace, min(half_workspace, midpoint.x))
-        midpoint.y = max(-half_workspace, min(half_workspace, midpoint.y))
-        path.extend([midpoint, end])
+        magnitude = math.sqrt(direction.x**2 + direction.y**2)
+        direction.x /= magnitude
+        direction.y /= magnitude
+
+    # Calculate minimum required distances for each segment
+    min_segment_lengths = [r_start + config.MIN_RADIUS]
+    for _ in range(num_joints - 1):
+        min_segment_lengths.append(2 * config.MIN_RADIUS)
+    min_segment_lengths.append(config.MIN_RADIUS + r_end)
+    
+    # Place points with minimum required spacing
+    current_pos = start
+    for i, min_length in enumerate(min_segment_lengths):
+        next_pos = Vector2D(
+            current_pos.x + direction.x * min_length,
+            current_pos.y + direction.y * min_length
+        )
+        # Clamp to workspace boundaries
+        next_pos.x = max(-half_workspace, min(half_workspace, next_pos.x))
+        next_pos.y = max(-half_workspace, min(half_workspace, next_pos.y))
+        path.append(next_pos)
+        current_pos = next_pos
+    
+    # Adjust last point to be exactly at end position
+    path[-1] = end
     
     iteration = 0
     converged = False
@@ -96,8 +104,8 @@ def iterative_path_refinement(start_gear, end_gear, boundary: List[Vector2D],
         # Clamp to workspace boundaries
         path[failure_index].x = max(-half_workspace, min(half_workspace, path[failure_index].x))
         path[failure_index].y = max(-half_workspace, min(half_workspace, path[failure_index].y))
-            iteration += 1
-            continue
+        iteration += 1
+        continue
         
         # Endpoint mismatch check
         last_dist = math.sqrt((path[-1].x - path[-2].x)**2 + (path[-1].y - path[-2].y)**2)
@@ -150,13 +158,19 @@ def iterative_path_refinement(start_gear, end_gear, boundary: List[Vector2D],
     
     return path, radii
 
+from components import Gear
+
 def generate_gear_path(start: Vector2D, end: Vector2D, boundary: List[Vector2D], obstacles: List[List[Vector2D]]) -> List[Vector2D]:
     """
     Generate a viable gear path between start and end points, avoiding obstacles.
     Returns a polyline (list of vertices) for gear placement.
     """
+    # Create temporary Gear objects for the start and end points
+    start_gear = Gear(id=-1, center=start, num_teeth=config.MIN_TEETH, module=config.GEAR_MODULE)
+    end_gear = Gear(id=-2, center=end, num_teeth=config.MIN_TEETH, module=config.GEAR_MODULE)
+    
     # Use iterative refinement with default input radius
-    path, _ = iterative_path_refinement(start, end, boundary, obstacles, config.GEAR_MODULE * config.MIN_TEETH / 2)
+    path, _ = iterative_path_refinement(start_gear, end_gear, boundary, obstacles, config.GEAR_MODULE * config.MIN_TEETH / 2)
     return path
 
 def a_star_path(start: Vector2D, end: Vector2D, graph_edges: List[Tuple[Vector2D, Vector2D]]) -> List[Vector2D]:

@@ -187,7 +187,8 @@ class GearEnv(gym.Env):
             gears=[],
             input_shaft=normalized_input_shaft,
             output_shaft=normalized_output_shaft,
-            target_ratio=eval(scenario["constraints"]["torque_ratio"].replace(":", "/"))
+            target_ratio=eval(scenario["constraints"]["torque_ratio"].replace(":", "/")),
+            obstacles=[]  # Initialize empty obstacles list
         )
         
         # Create and add input gear
@@ -253,7 +254,7 @@ class GearEnv(gym.Env):
             for gear in intermediate_gears:
                 # Check placement validity
                 boundary_ok = is_gear_inside_boundary(gear, self.state.boundary_poly)
-                collision_ok = not check_collision(gear, self.state.gears)
+                collision_ok = not check_collision(gear, self.state.gears + self.state.obstacles)
                 
                 if boundary_ok and collision_ok:
                     self.state.gears.append(gear)
@@ -464,8 +465,8 @@ class GearEnv(gym.Env):
                               f"teeth={gear.num_teeth}, z_layer={gear.z_layer}")
             
             # Calculate reward only if not terminated
-            success = self._is_successful_connection()
-            reward = calculate_reward(self.state, success)
+            # We no longer need the success parameter
+            reward = calculate_reward(self.state)
         
         end_time = time.time()
         step_duration = end_time - start_time
