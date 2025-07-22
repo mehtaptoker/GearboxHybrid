@@ -10,28 +10,35 @@ This repository contains detailed documentation covering all aspects of the syst
 ## Getting Started
 ### Installation
 ```bash
-git clone https://github.com/yourusername/gear-generator.git
-cd gear-generator
+git clone https://github.com/mingwucn/GearGen.git
+cd GearGen
 pip install -r requirements.txt
 ```
 
-### Training
-#### CPU Training
-```bash
-cd gear-generator
-python train_torch.py --data-dir data/intermediate
-```
+### Workflow
+1. **Training**:
+   ```bash
+   ./run_train.sh [options]
+   ```
+   Example with GPU:
+   ```bash
+   ./run_train.sh --gpu 0 --data-dir data/intermediate
+   ```
 
-#### GPU Training
-```bash
-cd gear-generator
-python train_torch.py --data-dir data/intermediate --gpu 0
-```
+2. **Testing**:
+   ```bash
+   ./test.sh
+   ```
 
-### Evaluation
-```bash
-python evaluation.py --model policy.pth --output reports/
-```
+3. **Evaluation**:
+   ```bash
+   ./run_eval.sh --model models/best_policy.pth
+   ```
+
+### Script Options
+- `run_train.sh`: Supports all parameters from train_torch.py
+- `test.sh`: Runs demo cases with visualization
+- `run_eval.sh`: Generates evaluation reports with metrics
 
 ## Research Foundations
 This implementation is based on rigorous research in:
@@ -73,11 +80,20 @@ Total Score: +95.0
 ```
 
 ## File Structure
-```
-gear-generator/
+```text
+GearGen/
 ├── components.py       # Data structures
 ├── environment.py      # RL environment
 ├── physics.py          # Physics calculations
 ├── train_torch.py      # Training implementation
 ├── evaluation.py       # Evaluation tools
-└── visualization.py    # Visualization tools
+├── visualization.py    # Visualization tools
+├── run_train.sh        # Training script
+├── test.sh             # Testing script
+└── run_eval.sh         # Evaluation script
+├── data/               # Sample data and constraints
+├── docs/               # Documentation
+├── logs/               # Training logs
+├── models/             # Trained models
+└── reports/            # Evaluation reports
+```

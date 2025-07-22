@@ -48,6 +48,8 @@ The reward function is designed to guide the agent towards a valid and efficient
 - **Other Penalties**: The environment also applies penalties for invalid actions, such as placing gears outside the boundary or causing collisions.
 
 ## Training Process
+The training workflow is managed through our scripts:
+
 1. **Initialization**:
    ```python
    env = GearEnv()
@@ -61,6 +63,27 @@ The reward function is designed to guide the agent towards a valid and efficient
         agent.store_transition(state, action, reward, next_state, done)
         agent.update()
    ```
+
+### Workflow Integration
+The training process is managed through our workflow scripts:
+
+1. **Training** (`run_train.sh`): 
+   - Handles hyperparameter configuration and environment setup
+   - Supports distributed training and checkpointing
+   - Example: `./run_train.sh --gpu 0 --max-gears 10`
+
+2. **Testing** (`test.sh`):
+   - Validates trained models on test cases
+   - Generates visual reports of gear systems
+
+3. **Evaluation** (`run_eval.sh`):
+   - Runs quantitative evaluation of models
+   - Generates performance metrics and reports
+
+To start training:
+```bash
+./run_train.sh --config configs/default.yaml
+```
    
    During training, the console will output the `Episode Reward` and `Length` for each completed episode. The `Length` refers to the number of steps the agent took in that episode before it ended. An episode can end due to either **termination** (e.g., a collision) or **truncation** (reaching the maximum number of steps).
 

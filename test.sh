@@ -47,11 +47,13 @@ for name in "${!TEST_CASES[@]}"; do
     fi
 done
 
-# Generate summary report
+# Generate summary report using Python for JSON parsing
 echo "Test Summary:" > "$REPORT_DIR/summary.txt"
 echo "=============" >> "$REPORT_DIR/summary.txt"
+
 for name in "${!TEST_CASES[@]}"; do
-    status=$(jq -r '.status' "$REPORT_DIR/$name/report.json")
+    # Use Python to extract status from report.json
+    status=$(python -c "import json; f=open('$REPORT_DIR/$name/report.json'); data=json.load(f); print(data['status'])")
     echo "- $name: $status" >> "$REPORT_DIR/summary.txt"
 done
 
