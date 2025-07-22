@@ -1,6 +1,0 @@
-Test Summary:
-=============
-- Example4: 
-- Example3: 
-- Example2: 
-- Example1: 
