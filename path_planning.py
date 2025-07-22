@@ -5,172 +5,202 @@ from components import Vector2D
 from physics import line_segment_intersects_polygon, is_gear_inside_boundary
 import config
 
-def iterative_path_refinement(start_gear, end_gear, boundary: List[Vector2D], 
-                             obstacles: List[List[Vector2D]], 
-                             max_iterations: int = 500, tolerance: float = 1e-2) -> Tuple[List[Vector2D], List[float]]:
+import numpy as np
+import math
+from typing import List, Tuple
+from components import Vector2D, Gear  # Assuming Gear is in components
+import config
+
+
+# =================================================================================
+# STEP 1: Corrected iterative_path_refinement function
+# =================================================================================
+# This version now ACCEPTS an initial path instead of creating its own.
+def iterative_path_refinement(
+        start_gear,
+        end_gear,
+        boundary: List[Vector2D],
+        obstacles: List[List[Vector2D]],
+        initial_path: List[Vector2D],  # <-- ADDED: Accepts an initial path
+        max_iterations: int = 500,
+        tolerance: float = 1e-2,
+) -> Tuple[List[Vector2D], List[float]]:
     """
-    Generate a viable gear path between start and end gears with iterative refinement.
-    Returns a tuple of (path, radii) where path is list of vertices and radii is list of gear radii.
-    
-    Implements the gap-filling algorithm:
-    1. Initialize path with A* or straight line
-    2. Iterative refinement for radius propagation and path adjustment
+    Refines a given gear path to satisfy meshing and boundary constraints.
     """
     # Start and end points with fixed radii
     start = start_gear.center
     end = end_gear.center
     r_start = start_gear.radius
     r_end = end_gear.radius
-    
-    # Initialize path - always include at least one intermediate point
-    path = [start]
-    
-    # Calculate the required distance for direct connection
-    direct_dist = math.sqrt((end.x - start.x)**2 + (end.y - start.y)**2)
-    min_required_dist = r_start + r_end
-    
+
     # Get workspace boundaries from config
     half_workspace = config.WORKSPACE_SIZE / 2.0
-    
-    # Generate initial path with minimum required gear spacing
-    path = [start]
-    direction = Vector2D(end.x - start.x, end.y - start.y)
-    if direction.x == 0 and direction.y == 0:
-        direction = Vector2D(1, 0)  # Default direction
-    else:
-        magnitude = math.sqrt(direction.x**2 + direction.y**2)
-        direction.x /= magnitude
-        direction.y /= magnitude
 
-    # Calculate minimum required distances for each segment
-    min_segment_lengths = [r_start + config.MIN_RADIUS]
-    for _ in range(num_joints - 1):
-        min_segment_lengths.append(2 * config.MIN_RADIUS)
-    min_segment_lengths.append(config.MIN_RADIUS + r_end)
-    
-    # Place points with minimum required spacing
-    current_pos = start
-    for i, min_length in enumerate(min_segment_lengths):
-        next_pos = Vector2D(
-            current_pos.x + direction.x * min_length,
-            current_pos.y + direction.y * min_length
-        )
-        # Clamp to workspace boundaries
-        next_pos.x = max(-half_workspace, min(half_workspace, next_pos.x))
-        next_pos.y = max(-half_workspace, min(half_workspace, next_pos.y))
-        path.append(next_pos)
-        current_pos = next_pos
-    
-    # Adjust last point to be exactly at end position
-    path[-1] = end
-    
+    # Work with a copy of the initial path
+    path = list(initial_path)
+
+    # --- THE OLD PATH GENERATION LOGIC HAS BEEN REMOVED ---
+
     iteration = 0
     converged = False
-    
+    radii = []  # Initialize radii here
+
     while iteration < max_iterations and not converged:
         # Forward radius propagation
         radii = [r_start]
         failure_index = None
-        
-        # Propagate radii from start to end
+        next_radius = 0  # Initialize next_radius
+
         for i in range(len(path) - 1):
-            dist = math.sqrt((path[i+1].x - path[i].x)**2 + (path[i+1].y - path[i].y)**2)
+            dist = math.sqrt(
+                (path[i + 1].x - path[i].x) ** 2 + (path[i + 1].y - path[i].y) ** 2
+            )
             next_radius = dist - radii[-1]
-            
-            # Mid-chain failure detection
-            if next_radius <= 0:
-                failure_index = i+1
+
+            if next_radius <= config.MIN_RADIUS / 2:  # Check against a minimum
+                failure_index = i + 1
                 break
             radii.append(next_radius)
-        
+
         if failure_index is not None:
-            # Adjust segment for mid-chain failure
-            direction = Vector2D(path[failure_index].x - path[failure_index-1].x,
-                                path[failure_index].y - path[failure_index-1].y)
-            if direction.x == 0 and direction.y == 0:
-                direction = Vector2D(1, 0)  # Default direction
-            
-            magnitude = math.sqrt(direction.x**2 + direction.y**2)
-            if magnitude > 0:
-                direction.x /= magnitude
-                direction.y /= magnitude
-            
-        # Move vertex to create space (minimum radius buffer)
-        move_distance = config.MIN_RADIUS - next_radius + 1.0
-        path[failure_index] = Vector2D(
-            path[failure_index].x + direction.x * move_distance,
-            path[failure_index].y + direction.y * move_distance
-        )
-        # Clamp to workspace boundaries
-        path[failure_index].x = max(-half_workspace, min(half_workspace, path[failure_index].x))
-        path[failure_index].y = max(-half_workspace, min(half_workspace, path[failure_index].y))
-        iteration += 1
-        continue
-        
+            direction = Vector2D(
+                path[failure_index].x - path[failure_index - 1].x,
+                path[failure_index].y - path[failure_index - 1].y,
+            ).normalized()
+
+            # Move vertex to create space
+            move_distance = (config.MIN_RADIUS - next_radius) + tolerance
+            path[failure_index] = Vector2D(
+                path[failure_index].x + direction.x * move_distance,
+                path[failure_index].y + direction.y * move_distance,
+            )
+            # Clamp to workspace boundaries
+            path[failure_index].x = max(-half_workspace, min(half_workspace, path[failure_index].x))
+            path[failure_index].y = max(-half_workspace, min(half_workspace, path[failure_index].y))
+
+            iteration += 1
+            continue
+
         # Endpoint mismatch check
-        last_dist = math.sqrt((path[-1].x - path[-2].x)**2 + (path[-1].y - path[-2].y)**2)
-        E = (radii[-1] + r_end) - last_dist
-        
+        # This check is only valid if radius propagation completed successfully
+        last_dist = math.sqrt(
+            (path[-1].x - path[-2].x) ** 2 + (path[-1].y - path[-2].y) ** 2
+        )
+        # The last calculated radius is radii[-1]
+        required_last_dist = radii[-1] + r_end
+        E = required_last_dist - last_dist
+
         if abs(E) < tolerance:
             converged = True
             break
-        
+
         # Distribute error across intermediate joints
-        num_joints = len(path) - 2  # Intermediate joints only
-        if num_joints > 0:
-            adjustment_per_joint = E / num_joints
-            for i in range(1, len(path)-1):
-                # Move joint along the path direction
-                segment_vec = Vector2D(path[i+1].x - path[i-1].x, 
-                                      path[i+1].y - path[i-1].y)
-                if segment_vec.x == 0 and segment_vec.y == 0:
-                    segment_vec = Vector2D(1, 0)  # Default direction
-                
-                magnitude = math.sqrt(segment_vec.x**2 + segment_vec.y**2)
-                if magnitude > 0:
-                    segment_vec.x /= magnitude
-                    segment_vec.y /= magnitude
-                
+        num_intermediate_joints = len(path) - 2
+        if num_intermediate_joints > 0:
+            adjustment_per_joint = E / num_intermediate_joints
+
+            for i in range(1, len(path) - 1):
+                segment_vec = Vector2D(
+                    path[i].x - path[i - 1].x, path[i].y - path[i - 1].y
+                ).normalized()
+
                 path[i] = Vector2D(
                     path[i].x + segment_vec.x * adjustment_per_joint,
-                    path[i].y + segment_vec.y * adjustment_per_joint
+                    path[i].y + segment_vec.y * adjustment_per_joint,
                 )
                 # Clamp to workspace boundaries
                 path[i].x = max(-half_workspace, min(half_workspace, path[i].x))
                 path[i].y = max(-half_workspace, min(half_workspace, path[i].y))
-        
+
         iteration += 1
-    
-    # Final validation
+
     if not converged:
-        # Instead of failing, return the best path we have with a warning
-        print(f"Warning: Path refinement failed to converge after {max_iterations} iterations, using best path found")
-    
-    # Ensure we have at least one intermediate gear
-    if len(path) <= 2:
-        # Fallback: add midpoint if algorithm converged to direct path
-        midpoint = Vector2D((start.x + end.x)/2, (start.y + end.y)/2)
-        path.insert(1, midpoint)
-        # Estimate radius for midpoint
-        dist1 = math.sqrt((midpoint.x - start.x)**2 + (midpoint.y - start.y)**2)
-        dist2 = math.sqrt((end.x - midpoint.x)**2 + (end.y - midpoint.y)**2)
-        radii = [r_start, dist1 - r_start, dist2 - (dist1 - r_start)]
-    
-    return path, radii
+        print(
+            f"Warning: Path refinement failed to converge after {max_iterations} iterations."
+        )
 
-from components import Gear
+    # Final radii calculation on the resulting path
+    final_radii = [r_start]
+    for i in range(len(path) - 1):
+        dist = math.sqrt(
+            (path[i + 1].x - path[i].x) ** 2 + (path[i + 1].y - path[i].y) ** 2
+        )
+        final_radii.append(dist - final_radii[-1])
 
-def generate_gear_path(start: Vector2D, end: Vector2D, boundary: List[Vector2D], obstacles: List[List[Vector2D]]) -> List[Vector2D]:
+    return path, final_radii
+
+
+# =================================================================================
+# STEP 2: Corrected generate_gear_path function
+# =================================================================================
+# This version now CREATES an intelligent initial path before calling the refiner.
+def build_visibility_graph(start: Vector2D, end: Vector2D, obstacles: List[List[Vector2D]], boundary: List[Vector2D]) -> \
+List[Tuple[Vector2D, Vector2D]]:
     """
-    Generate a viable gear path between start and end points, avoiding obstacles.
-    Returns a polyline (list of vertices) for gear placement.
+    Creates a visibility graph for A* pathfinding.
+    Nodes are start, end, and all vertices of the obstacles.
+    Edges connect nodes that have a clear line of sight.
     """
-    # Create temporary Gear objects for the start and end points
+
+    def is_segment_valid(p1: Vector2D, p2: Vector2D, obstacles_to_check: List[List[Vector2D]]) -> bool:
+        """Helper to check if a line segment intersects any obstacle."""
+        for obs_poly in obstacles_to_check:
+            if line_segment_intersects_polygon(p1, p2, obs_poly):
+                return False
+        return True
+
+    # Collect all points of interest
+    points = [start, end]
+    for obs_poly in obstacles:
+        points.extend(obs_poly)
+
+    graph_edges = []
+    # Check for line of sight between every pair of points
+    for i in range(len(points)):
+        for j in range(i + 1, len(points)):
+            p1 = points[i]
+            p2 = points[j]
+            if is_segment_valid(p1, p2, obstacles):
+                graph_edges.append((p1, p2))
+
+    return graph_edges
+
+
+def generate_gear_path(start: Vector2D, end: Vector2D, boundary: List[Vector2D], obstacles: List[List[Vector2D]]) -> \
+List[Vector2D]:
+    """
+    Generates a viable gear path, creating a simple path for direct connections
+    and using A* to navigate around obstacles.
+    """
     start_gear = Gear(id=-1, center=start, num_teeth=config.MIN_TEETH, module=config.GEAR_MODULE)
     end_gear = Gear(id=-2, center=end, num_teeth=config.MIN_TEETH, module=config.GEAR_MODULE)
-    
-    # Use iterative refinement with default input radius
-    path, _ = iterative_path_refinement(start_gear, end_gear, boundary, obstacles, config.GEAR_MODULE * config.MIN_TEETH / 2)
+
+    initial_path = []
+
+    if not obstacles:
+        # Case 1: No obstacles. Create a simple 3-point path.
+        print("No obstacles found. Generating direct path.")
+        midpoint = Vector2D((start.x + end.x) / 2, (start.y + end.y) / 2)
+        initial_path = [start, midpoint, end]
+    else:
+        # Case 2: Obstacles are present. Build a graph and use A*.
+        print("Obstacles found. Building visibility graph and running A*.")
+        try:
+            graph_edges = build_visibility_graph(start, end, obstacles, boundary)
+            initial_path = a_star_path(start, end, graph_edges)
+        except Exception as e:
+            print(f"A* Pathfinding failed with an error: {e}")
+            return []
+
+    if not initial_path:
+        print("Warning: Pathfinding did not return a valid path.")
+        return []
+
+    # Call the refinement function with the generated initial_path
+    path, _ = iterative_path_refinement(
+        start_gear, end_gear, boundary, obstacles, initial_path
+    )
     return path
 
 def a_star_path(start: Vector2D, end: Vector2D, graph_edges: List[Tuple[Vector2D, Vector2D]]) -> List[Vector2D]:

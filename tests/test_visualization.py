@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../')
 import cv2
 import numpy as np
 import json
@@ -6,11 +8,25 @@ from PIL import Image, ImageDraw
 
 def main():
     # Load the original image
-    original_image_path = 'data/Example1.png'
+
+    from pathlib import Path
+
+    # The path to the directory containing this script
+    script_dir = Path(__file__).parent
+
+    # The path to the project's root folder (one level up from 'tests')
+    project_root = script_dir.parent
+
+    # The full, correct path to the image
+    original_image_path = project_root / 'data' / 'Example1.png'
+
+    # Now this will work correctly
     original_image = Image.open(original_image_path).convert("RGBA")
 
     # Load the scenario data
-    scenario_path = 'data/intermediate/Example1.json'
+    # Constructs the full, correct path to your JSON file
+    scenario_path = project_root / 'data' / 'intermediate' / 'Example1.json'
+
     with open(scenario_path, 'r') as f:
         scenario = json.load(f)
 

@@ -159,83 +159,127 @@ def validate_gear_train(
     
     return True, None
 
-def adjust_joints(
-    path: List[Vector2D],
-    start_gear: Gear,
-    end_gear: Gear,
-    radii: List[float],
-    endpoint_error: float,
-    adjustment_factor: float = 0.05  # Reduced adjustment factor for finer control
-) -> List[Vector2D]:
+
+def generate_gear_train(
+        start_gear: Gear,
+        end_gear: Gear,
+        path: List[Vector2D],
+        existing_gears: List[Gear],
+        boundary_poly: List[Vector2D],
+        obstacles: List[Gear],
+        module: float,
+        max_iterations: int = 2000,  # Increased iterations for complex problems
+        tolerance: float = 0.1,  # A reasonable tolerance for meshing
+        learning_rate: float = 0.1  # The step size for gradient descent
+) -> Optional[List[Gear]]:
     """
-    Adjust joint positions to ensure proper meshing distances and reduce endpoint mismatch.
-    
-    Args:
-        path: Current intermediate joint positions
-        start_gear: Fixed start gear
-        end_gear: Fixed end gear
-        radii: Current intermediate gear radii
-        endpoint_error: Current endpoint mismatch
-        adjustment_factor: Scaling factor for adjustments
-        
-    Returns:
-        Adjusted path
+    Generate a tangent gear train using gradient descent optimization.
     """
     if not path:
-        return path
-    
-    # Adjust first joint for proper meshing with start gear
-    start_dir = Vector2D(
-        path[0].x - start_gear.center.x,
-        path[0].y - start_gear.center.y
-    ).normalized()
-    required_start_distance = start_gear.radius + radii[0]
-    current_start_distance = math.sqrt(
-        (path[0].x - start_gear.center.x)**2 +
-        (path[0].y - start_gear.center.y)**2
-    )
-    start_adjustment = (required_start_distance - current_start_distance) * adjustment_factor
-    path[0] = Vector2D(
-        start_gear.center.x + start_dir.x * (current_start_distance + start_adjustment),
-        start_gear.center.y + start_dir.y * (current_start_distance + start_adjustment)
-    )
-    
-    # Adjust intermediate joints for proper meshing with neighbors
-    for i in range(1, len(path)):
-        # Calculate vector between current and previous joint
-        vec = Vector2D(
-            path[i].x - path[i-1].x,
-            path[i].y - path[i-1].y
-        )
-        current_distance = math.sqrt(vec.x**2 + vec.y**2)
-        required_distance = radii[i-1] + radii[i]
-        adjustment = (required_distance - current_distance) * adjustment_factor
-        
-        if current_distance > 0:
-            unit_vec = Vector2D(vec.x / current_distance, vec.y / current_distance)
-            # Move current joint away from previous to increase distance
-            path[i] = Vector2D(
-                path[i].x + unit_vec.x * adjustment,
-                path[i].y + unit_vec.y * adjustment
-            )
-    
-    # Adjust last joint for proper meshing with end gear
-    end_dir = Vector2D(
-        end_gear.center.x - path[-1].x,
-        end_gear.center.y - path[-1].y
-    ).normalized()
-    required_end_distance = radii[-1] + end_gear.radius
-    current_end_distance = math.sqrt(
-        (path[-1].x - end_gear.center.x)**2 +
-        (path[-1].y - end_gear.center.y)**2
-    )
-    end_adjustment = (required_end_distance - current_end_distance) * adjustment_factor
-    path[-1] = Vector2D(
-        path[-1].x + end_dir.x * end_adjustment,
-        path[-1].y + end_dir.y * end_adjustment
-    )
-    
-    return path
+        if check_meshing(start_gear, end_gear, abs_tol=tolerance):
+            return []
+        else:
+            return None
+
+    path = [Vector2D(p.x, p.y) for p in path]
+    num_joints = len(path)
+
+    # Main optimization loop
+    for iteration in range(max_iterations):
+        # 1. Propagate radii to determine the size of each gear
+        radii, endpoint_error = propagate_radii(start_gear, end_gear, path, module)
+
+        # Check for invalid radii which can happen if gears are too far apart
+        if any(r <= 0 for r in radii):
+            # If we have an invalid radius, it means the path is stretched too far.
+            # A simple recovery is to reset the path by spacing the joints
+            # evenly between the start and end gears.
+            print(f"Iteration {iteration}: Invalid radius detected. Resetting path.")
+            start_pos = start_gear.center
+            end_pos = end_gear.center
+            for i in range(num_joints):
+                t = (i + 1) / (num_joints + 1)  # Interpolation factor
+                path[i] = start_pos.interpolate(end_pos, t)
+            continue  # Retry with the new path
+
+        # --- LOSS CALCULATION ---
+        # The loss is the sum of squared errors of all meshing distances.
+        total_error = 0
+        all_gears = [start_gear] + [Gear(id=0, center=p, num_teeth=int(r * 2 / module), module=module) for p, r in
+                                    zip(path, radii)] + [end_gear]
+
+        for i in range(len(all_gears) - 1):
+            gear1 = all_gears[i]
+            gear2 = all_gears[i + 1]
+            actual_dist = gear1.center.magnitude(gear2.center)
+            expected_dist = gear1.radius + gear2.radius
+            error = actual_dist - expected_dist
+            total_error += error ** 2
+
+        # 2. Check for convergence
+        if total_error < tolerance:
+            print(f"Converged after {iteration} iterations with error {total_error:.4f}")
+            break
+
+        # --- GRADIENT CALCULATION ---
+        # Calculate the gradient of the loss function for each joint.
+        gradients = [Vector2D(0, 0) for _ in range(num_joints)]
+
+        # We iterate through each joint and calculate its influence on the total error.
+        for i in range(num_joints):
+            # The position of joint 'i' affects two connections:
+            #   - The connection to the previous gear (or start_gear)
+            #   - The connection to the next gear (or end_gear)
+
+            # Previous gear connection
+            prev_gear = all_gears[i]
+            current_gear = all_gears[i + 1]
+
+            actual_dist = prev_gear.center.magnitude(current_gear.center)
+            expected_dist = prev_gear.radius + current_gear.radius
+            error = actual_dist - expected_dist
+
+            # Gradient contribution from this connection
+            grad_x = 2 * error * (current_gear.center.x - prev_gear.center.x) / actual_dist if actual_dist > 0 else 0
+            grad_y = 2 * error * (current_gear.center.y - prev_gear.center.y) / actual_dist if actual_dist > 0 else 0
+            gradients[i].x += grad_x
+            gradients[i].y += grad_y
+
+            # Next gear connection
+            next_gear = all_gears[i + 2]
+
+            actual_dist = current_gear.center.magnitude(next_gear.center)
+            expected_dist = current_gear.radius + next_gear.radius
+            error = actual_dist - expected_dist
+
+            # Gradient contribution from this connection
+            grad_x = 2 * error * (current_gear.center.x - next_gear.center.x) / actual_dist if actual_dist > 0 else 0
+            grad_y = 2 * error * (current_gear.center.y - next_gear.center.y) / actual_dist if actual_dist > 0 else 0
+            gradients[i].x += grad_x
+            gradients[i].y += grad_y
+
+        # 3. Update joint positions (take a step opposite the gradient)
+        for i in range(num_joints):
+            path[i].x -= learning_rate * gradients[i].x
+            path[i].y -= learning_rate * gradients[i].y
+
+    # --- Final Validation ---
+    final_radii, final_error = propagate_radii(start_gear, end_gear, path, module)
+    valid, reason = validate_gear_train(start_gear, end_gear, path, final_radii, existing_gears + obstacles, module,
+                                        tolerance)
+
+    if valid and final_error < tolerance:
+        print("Successfully generated and validated gear train.")
+        intermediate_gears = []
+        for i, (pos, radius) in enumerate(zip(path, final_radii)):
+            num_teeth = round(2 * radius / module)
+            gear = Gear(id=1000 + i, center=pos, num_teeth=num_teeth, module=module)
+            intermediate_gears.append(gear)
+        return intermediate_gears
+    else:
+        print(f"Failed to generate valid gear train. Reason: {reason}, Final Error: {final_error:.4f}")
+        # Optionally, you could still try the constraint_solver as a fallback here.
+        return None
 
 def generate_gear_train(
     start_gear: Gear,

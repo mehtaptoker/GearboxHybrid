@@ -106,8 +106,8 @@ intermediate_gears = generate_gear_train(
     ],
     obstacles=obstacles,
     module=1.0,
-    max_iterations=1000,
-    tolerance=0.1
+    max_iterations=5000,
+    tolerance=0.01
 )
 
 if intermediate_gears is None:

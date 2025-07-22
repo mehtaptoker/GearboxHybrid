@@ -1,5 +1,6 @@
 import unittest
 import sys
+sys.path.append('../')
 import os
 import matplotlib.pyplot as plt
 
@@ -24,10 +25,13 @@ class TestPathPlanning(unittest.TestCase):
         obstacles = []
 
         path = generate_gear_path(start, end, boundary, obstacles)
+
         # Path should include start point, intermediate point(s), and end point
         self.assertEqual(len(path), 3)
         self.assertEqual(path[0], start)
-        self.assertEqual(path[1], end)
+
+        # Corrected line: Check the THIRD point (index 2) for the end
+        self.assertEqual(path[2], end)
         
     def test_path_with_obstacle(self):
         """Test path with an obstacle between start and end"""

@@ -153,7 +153,8 @@ class GearEnv(gym.Env):
             scenario = generate_scenario()
 
         # Normalize coordinates to fit into the agent's workspace
-        boundary_points = [Vector2D(p['x'], p['y']) for p in scenario["boundary_poly"]]
+       # boundary_points = [Vector2D(p['x'], p['y']) for p in scenario["boundary_poly"]]
+        boundary_points = [Vector2D(p.x, p.y) for p in scenario["boundary_poly"]]
         
         # Find bounding box of the original polygon
         min_x = min(p.x for p in boundary_points)
@@ -178,8 +179,10 @@ class GearEnv(gym.Env):
 
         # Transform all coordinates
         normalized_boundary = [transform_point(p) for p in boundary_points]
-        normalized_input_shaft = transform_point(Vector2D(scenario["input_shaft"]['x'], scenario["input_shaft"]['y']))
-        normalized_output_shaft = transform_point(Vector2D(scenario["output_shaft"]['x'], scenario["output_shaft"]['y']))
+        #normalized_input_shaft = transform_point(Vector2D(scenario["input_shaft"]['x'], scenario["input_shaft"]['y']))
+        #normalized_output_shaft = transform_point(Vector2D(scenario["output_shaft"]['x'], scenario["output_shaft"]['y']))
+        normalized_input_shaft = transform_point(scenario["input_shaft"])
+        normalized_output_shaft = transform_point(scenario["output_shaft"])
 
         # Create initial state with normalized coordinates
         self.state = SystemState(
@@ -190,22 +193,47 @@ class GearEnv(gym.Env):
             target_ratio=eval(scenario["constraints"]["torque_ratio"].replace(":", "/")),
             obstacles=[]  # Initialize empty obstacles list
         )
-        
+
+        # --- Smarter Initial Gear Sizing ---
+        target_ratio = self.state.target_ratio
+        valid_pairs = []
+
+        # Find all valid (input_teeth, output_teeth) pairs that satisfy the target ratio
+        for input_teeth in range(config.MIN_TEETH, config.MAX_TEETH + 1):
+            ideal_output_teeth = input_teeth * target_ratio
+            # Check if the ideal output teeth count is within the allowed range
+            if config.MIN_TEETH <= ideal_output_teeth <= config.MAX_TEETH:
+                valid_pairs.append((input_teeth, round(ideal_output_teeth)))
+
+        # If no valid pair is found, the target ratio is impossible with current constraints.
+        # Fallback to the old random method, though this scenario is now less likely.
+        if not valid_pairs:
+            if self.verbose >= 1:
+                print(f"Warning: No valid gear pair found for target ratio {target_ratio}. Using random sizing.")
+            input_teeth_n = random.randint(config.MIN_TEETH, config.MAX_TEETH)
+            output_teeth_n = random.randint(config.MIN_TEETH, config.MAX_TEETH)
+        else:
+            # Randomly select one of the valid pairs
+            input_teeth_n, output_teeth_n = random.choice(valid_pairs)
+
+        if self.verbose >= 1:
+            print(f"Smart Sizing: Target Ratio={target_ratio:.2f}, Selected Pair=({input_teeth_n}, {output_teeth_n})")
+
         # Create and add input gear
         input_gear = Gear(
             id=1,
             center=self.state.input_shaft,
-            num_teeth=random.randint(config.MIN_TEETH, config.MAX_TEETH),
+            num_teeth=input_teeth_n,
             module=config.GEAR_MODULE,
             z_layer=0,
             is_driver=True
         )
-        
+
         # Create and add output gear
         output_gear = Gear(
             id=2,
             center=self.state.output_shaft,
-            num_teeth=random.randint(config.MIN_TEETH, config.MAX_TEETH),
+            num_teeth=output_teeth_n,
             module=config.GEAR_MODULE,
             z_layer=0,
             is_driver=False

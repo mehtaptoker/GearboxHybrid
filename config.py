@@ -18,8 +18,8 @@ CONNECTION_PATH_WIDTH = 10.0  # Width of the connection path (mm)
 # --- RL Training Hyperparameters ---
 MODEL_ALGORITHM = "PPO"
 POLICY = "MlpPolicy"
-TOTAL_TIMESTEPS = 1_000_000
-LEARNING_RATE = 0.0003
+TOTAL_TIMESTEPS = 1_000 #How much you are taking for 1 episode
+LEARNING_RATE = 0.0003 #random number --> effect on Neural Networls
 GAMMA = 0.99
 TENSORBOARD_LOG_PATH = "./logs/"
 BATCH_SIZE = 64
@@ -36,5 +36,5 @@ P_GEAR_COUNT_PENALTY = -0.1 # Penalty for each gear added to the system
 
 # New parameters for composite reward function
 ALPHA = 10.0  # Coefficient for torque ratio reward
-BETA = 1.0    # Coefficient for connectivity penalty
+BETA = 1.0    # Coefficient for connectivity penalty --> for 5 it gives fails
 COLLISION_PENALTY = -100.0  # Large penalty for collisions

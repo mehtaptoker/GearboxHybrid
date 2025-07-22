@@ -42,7 +42,7 @@ class ValueNetwork(nn.Module):
         
     def forward(self, x):
         return self.fc(x)
-
+#boundary constraint, torque and the mass --> linear combination
 class PPOAgent:
     def __init__(self, env, device):
         self.env = env
