@@ -133,28 +133,33 @@ def _generate_point_in_poly(boundary_poly: List[Vector2D], margin: float = 10.0)
     return Vector2D(centroid_x, centroid_y)
 
 def generate_scenario(data_dir=None) -> Dict:
-    """Generate a fixed demo scenario: circles in a box."""
-    # Fixed rectangular boundary
-    boundary_poly = [
-        Vector2D(-40, -40),
-        Vector2D(40, -40),
-        Vector2D(40, 40),
-        Vector2D(-40, 40)
-    ]
+    """Generate a random scenario with a random boundary and shafts."""
+    # 1. Generate a random boundary polygon
+    num_vertices = random.randint(5, 8)
+    avg_radius = config.WORKSPACE_SIZE / 2 * 0.9  # Use 90% of workspace
+    irregularity = 0.6
+    spikeyness = 0.3
+    boundary_poly = _generate_random_simple_polygon(
+        num_vertices, avg_radius, irregularity, spikeyness
+    )
+
+    # 2. Generate random shaft positions inside the polygon
+    min_shaft_dist = config.WORKSPACE_SIZE / 3
+    max_attempts = 100
+    for _ in range(max_attempts):
+        input_shaft = _generate_point_in_poly(boundary_poly, margin=20.0)
+        output_shaft = _generate_point_in_poly(boundary_poly, margin=20.0)
+        dist_sq = (input_shaft.x - output_shaft.x)**2 + (input_shaft.y - output_shaft.y)**2
+        if dist_sq > min_shaft_dist**2:
+            break
     
-    # Input circle (driver)
-    input_shaft = Vector2D(-30, -30)
-    # Output circle (driven)
-    output_shaft = Vector2D(30, 30)
-    target_ratio = 1.0  # 1:1 ratio
+    # 3. Generate a random target ratio
+    possible_ratios = [1.5, 2.0, 2.5, 0.5, 0.75]
+    target_ratio = random.choice(possible_ratios)
     
     return {
         "boundary_poly": boundary_poly,
         "input_shaft": input_shaft,
         "output_shaft": output_shaft,
         "target_ratio": target_ratio,
-        "constraints": {
-            "torque_ratio": "1:1",
-            "mass_space_ratio": 0.5
-        }
     }

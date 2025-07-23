@@ -24,4 +24,4 @@ def create_test_scenarios(num_samples=5):
         print(f"Generated report {i+1}/{num_samples} at {report_path}")
 
 if __name__ == "__main__":
-    create_test_scenarios()
+    create_test_scenarios(20)
