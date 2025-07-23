@@ -133,38 +133,20 @@ def _generate_point_in_poly(boundary_poly: List[Vector2D], margin: float = 10.0)
     return Vector2D(centroid_x, centroid_y)
 
 def generate_scenario(data_dir=None) -> Dict:
-    """Generate a random training scenario.
+    """Generate a fixed demo scenario: circles in a box."""
+    # Fixed rectangular boundary
+    boundary_poly = [
+        Vector2D(-40, -40),
+        Vector2D(40, -40),
+        Vector2D(40, 40),
+        Vector2D(-40, 40)
+    ]
     
-    Returns:
-        Dictionary with keys: "boundary_poly", "input_shaft", "output_shaft", "target_ratio"
-    """
-    # Generate boundary polygon (simple/Jordan polygon)
-    boundary_poly = _generate_random_simple_polygon(
-        num_vertices=config.BOUNDARY_COMPLEXITY,
-        avg_radius=config.WORKSPACE_SIZE/4,
-        irregularity=0.5,
-        spikeyness=0.3
-    )
-    
-    # Generate input and output shafts with 10mm margin from boundary
-    input_shaft = _generate_point_in_poly(boundary_poly, margin=10.0)
-    output_shaft = _generate_point_in_poly(boundary_poly, margin=10.0)
-    
-    # Ensure shafts are sufficiently apart
-    max_attempts = 100
-    for _ in range(max_attempts):
-        if math.sqrt((input_shaft.x - output_shaft.x)**2 + (input_shaft.y - output_shaft.y)**2) >= config.WORKSPACE_SIZE/10:
-            break
-        output_shaft = _generate_point_in_poly(boundary_poly, margin=10.0)
-    else:
-        # If we can't find a suitable point, regenerate the entire scenario
-        return generate_scenario(data_dir)
-    
-    # Generate target ratio and constraints
-    torque_n = random.randint(1, 5)
-    torque_d = random.randint(1, 5)
-    target_ratio = torque_n / torque_d
-    mass_space_ratio = random.uniform(0.1, 1.0)
+    # Input circle (driver)
+    input_shaft = Vector2D(-30, -30)
+    # Output circle (driven)
+    output_shaft = Vector2D(30, 30)
+    target_ratio = 1.0  # 1:1 ratio
     
     return {
         "boundary_poly": boundary_poly,
@@ -172,7 +154,7 @@ def generate_scenario(data_dir=None) -> Dict:
         "output_shaft": output_shaft,
         "target_ratio": target_ratio,
         "constraints": {
-            "torque_ratio": f"{torque_n}:{torque_d}",
-            "mass_space_ratio": mass_space_ratio
+            "torque_ratio": "1:1",
+            "mass_space_ratio": 0.5
         }
     }

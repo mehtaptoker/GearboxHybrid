@@ -4,6 +4,7 @@ import json
 import sys
 import config
 import argparse
+import os  # For directory operations
 
 def main():
     # Parse command-line arguments
@@ -16,6 +17,10 @@ def main():
     
     input_file = args.input_file
     max_iterations = args.max_iterations
+    
+    # Add GearGen/ prefix to input_file path
+    if not input_file.startswith("GearGen/"):
+        input_file = "GearGen/" + input_file
     
     # Load input configuration
     with open(input_file) as f:
@@ -118,6 +123,8 @@ def main():
         
         # Save final system state
         output_file = "data/demo/demo_system.json"
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
         # Convert system state to JSON serializable format
         system_dict = {
             "boundary_poly": [{"x": p.x, "y": p.y} for p in system_state.boundary_poly],

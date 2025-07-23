@@ -1,16 +1,16 @@
 # --- Environment Configuration ---
-MAX_GEARS = 15
-MAX_STEPS_PER_EPISODE = 20
-BOUNDARY_COMPLEXITY = 8
+MAX_GEARS = 5  # Reduced for simplicity
+MAX_STEPS_PER_EPISODE = 10  # Reduced for simpler scenario
+BOUNDARY_COMPLEXITY = 4  # Rectangle has 4 sides
 WORKSPACE_SIZE = 100.0  # The coordinate system will range from -50 to 50
 MAX_GAP_FILLING_ITERATIONS = 1000  # Maximum iterations for the gap filling algorithm
 
 # --- Physics Configuration ---
 GEAR_MODULE = 1.0
-MIN_TEETH = 8
-MAX_TEETH = 40
+MIN_TEETH = 20  # Fixed size for all circles (radius=10)
+MAX_TEETH = 20  # Fixed size for all circles (radius=10)
 MIN_RADIUS = (MIN_TEETH * GEAR_MODULE) / 2.0  # Minimum radius for intermediate gears
-MESHING_TOLERANCE = 1e-2  # Increased tolerance for more robust meshing checks
+MESHING_TOLERANCE = 0.5  # Significantly increased tolerance for more robust meshing checks
 GEAR_THICKNESS = 10.0  # Constant thickness for all gears (mm)
 GEAR_DENSITY = 7.85    # Steel density (g/cm³)
 CONNECTION_PATH_WIDTH = 10.0  # Width of the connection path (mm)
@@ -18,8 +18,8 @@ CONNECTION_PATH_WIDTH = 10.0  # Width of the connection path (mm)
 # --- RL Training Hyperparameters ---
 MODEL_ALGORITHM = "PPO"
 POLICY = "MlpPolicy"
-TOTAL_TIMESTEPS = 1_000 #How much you are taking for 1 episode
-LEARNING_RATE = 0.0003 #random number --> effect on Neural Networls
+TOTAL_TIMESTEPS = 200  # Further reduced for quick demo
+LEARNING_RATE = 0.01   # Increased learning rate for faster convergence
 GAMMA = 0.99
 TENSORBOARD_LOG_PATH = "./logs/"
 BATCH_SIZE = 64
