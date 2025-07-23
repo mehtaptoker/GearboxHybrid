@@ -6,10 +6,11 @@ import matplotlib.pyplot as plt
 
 # Add parent directory to path to import modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from physics import point_in_polygon, line_segment_intersects_polygon, is_gear_inside_boundary, line_segments_intersect # <-- ADD IT HERE
 
 from path_planning import generate_gear_path
 from components import Vector2D
-from physics import line_segment_intersects_polygon
+from physics import line_segment_intersects_polygon,line_segments_intersect
 
 class TestPathPlanning(unittest.TestCase):
 

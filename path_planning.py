@@ -2,7 +2,7 @@ import numpy as np
 import math
 from typing import List, Tuple
 from components import Vector2D
-from physics import line_segment_intersects_polygon, point_in_polygon, is_gear_inside_boundary
+from physics import line_segment_intersects_polygon, point_in_polygon, line_segments_intersect, is_gear_inside_boundary,line_segments_intersect
 import config
 
 import numpy as np
@@ -11,15 +11,21 @@ from typing import List, Tuple
 from components import Vector2D, Gear  # Assuming Gear is in components
 import config
 
+import math
+from typing import List, Tuple, Optional
 
-# =================================================================================
-# STEP 1: Corrected iterative_path_refinement function
-# =================================================================================
-# This version now ACCEPTS an initial path instead of creating its own.
+# --- Assume these are your component and physics modules ---
+from components import Vector2D, Gear
+from physics import point_in_polygon, line_segment_intersects_polygon, is_gear_inside_boundary
+import config
+
+
+# ---------------------------------------------------------
+
+
 def a_star_path(start: Vector2D, end: Vector2D, graph_edges: List[Tuple[Vector2D, Vector2D]]) -> List[Vector2D]:
     """
     Finds the shortest path from start to end using A* algorithm on a visibility graph.
-    This version is robust and handles disconnected nodes correctly.
     """
     graph = {}
     all_nodes = {start, end}
@@ -61,66 +67,49 @@ def a_star_path(start: Vector2D, end: Vector2D, graph_edges: List[Tuple[Vector2D
     return []
 
 
-# In your path_planning.py file
+def are_adjacent(p1: Vector2D, p2: Vector2D, polygon: List[Vector2D]) -> bool:
+    """Checks if two points are adjacent vertices in a polygon."""
+    try:
+        idx1 = polygon.index(p1)
+        idx2 = polygon.index(p2)
+        n = len(polygon)
+        return abs(idx1 - idx2) == 1 or (idx1 == 0 and idx2 == n - 1) or (idx2 == 0 and idx1 == n - 1)
+    except ValueError:
+        return False
+
 
 def build_visibility_graph(start: Vector2D, end: Vector2D, obstacles: List[List[Vector2D]], boundary: List[Vector2D]) -> \
 List[Tuple[Vector2D, Vector2D]]:
     """
-    Creates a visibility graph for A* pathfinding.
-    This version uses a robust validity check and correctly handles obstacle edges.
+    Creates a visibility graph using a robust check that correctly handles lines of sight that touch obstacle vertices.
     """
 
     def is_segment_valid(p1: Vector2D, p2: Vector2D, obstacles_to_check: List[List[Vector2D]]) -> bool:
-        """Helper to check if a line segment is valid by avoiding obstacle interiors."""
+        """Helper to check if a line segment is valid."""
         p1_shrunk = p1.interpolate(p2, 0.001)
         p2_shrunk = p2.interpolate(p1, 0.001)
-
         for obs_poly in obstacles_to_check:
-            midpoint = Vector2D((p1.x + p2.x) / 2, (p1.y + p2.y) / 2)
+            midpoint = p1.interpolate(p2, 0.5)
             if point_in_polygon(midpoint, obs_poly):
                 return False
             if line_segment_intersects_polygon(p1_shrunk, p2_shrunk, obs_poly):
                 return False
         return True
 
-    def are_adjacent(p1: Vector2D, p2: Vector2D, polygon: List[Vector2D]) -> bool:
-        """Checks if two points are adjacent vertices in a polygon."""
-        try:
-            idx1 = polygon.index(p1)
-            idx2 = polygon.index(p2)
-            n = len(polygon)
-            # Check if indices are consecutive, or wrap around for the last and first points
-            return abs(idx1 - idx2) == 1 or (idx1 == 0 and idx2 == n - 1) or (idx2 == 0 and idx1 == n - 1)
-        except ValueError:
-            return False
-
     points = [start, end]
     for obs_poly in obstacles:
         points.extend(obs_poly)
 
-    unique_points = []
-    for p in points:
-        if p not in unique_points:
-            unique_points.append(p)
+    unique_points = list(set(points))
 
     graph_edges = []
     for i in range(len(unique_points)):
         for j in range(i + 1, len(unique_points)):
-            p1 = unique_points[i]
-            p2 = unique_points[j]
+            p1, p2 = unique_points[i], unique_points[j]
 
-            # --- START of CORRECTED LOGIC ---
-            # Check if the segment is an edge of an obstacle polygon.
-            # If so, we should not create a visibility edge for it.
-            is_an_obstacle_edge = False
-            for obs_poly in obstacles:
-                if are_adjacent(p1, p2, obs_poly):
-                    is_an_obstacle_edge = True
-                    break
-
+            is_an_obstacle_edge = any(are_adjacent(p1, p2, obs) for obs in obstacles)
             if is_an_obstacle_edge:
-                continue  # Skip this pair, as it's a solid wall of an obstacle
-            # --- END of CORRECTED LOGIC ---
+                continue
 
             if is_segment_valid(p1, p2, obstacles):
                 graph_edges.append((p1, p2))
@@ -128,58 +117,80 @@ List[Tuple[Vector2D, Vector2D]]:
     return graph_edges
 
 
-def iterative_path_refinement(start_gear, end_gear, boundary, obstacles, initial_path, max_iterations=500,
-                              tolerance=0.1) -> Tuple[List[Vector2D], List[float]]:
+def iterative_path_refinement(
+        start_gear: Gear,
+        end_gear: Gear,
+        boundary: List[Vector2D],
+        obstacles: List[List[Vector2D]],
+        initial_path: List[Vector2D],
+        max_iterations: int = 2000,
+        tolerance: float = 0.1,
+        learning_rate: float = 0.05
+) -> Tuple[List[Vector2D], List[float]]:
     """
-    Refines a given gear path to satisfy meshing constraints while avoiding obstacles.
+    Refines a gear path using a stable, obstacle-aware error-correction method.
     """
-    path = list(initial_path)
-    r_start, r_end = start_gear.radius, end_gear.radius
-    learning_rate = 0.05
-    half_workspace = config.WORKSPACE_SIZE / 2.0
+    path = [Vector2D(p.x, p.y) for p in list(initial_path)]
+    if not path:
+        return [], []
 
     for iteration in range(max_iterations):
-        # Propagate radii
-        radii = [r_start]
-        for i in range(len(path) - 1):
-            dist = math.sqrt((path[i + 1].x - path[i].x) ** 2 + (path[i + 1].y - path[i].y) ** 2)
+        temp_path = [start_gear.center] + path + [end_gear.center]
+
+        radii = [start_gear.radius]
+        for i in range(len(temp_path) - 1):
+            dist = math.sqrt((temp_path[i + 1].x - temp_path[i].x) ** 2 + (temp_path[i + 1].y - temp_path[i].y) ** 2)
             next_r = dist - radii[-1]
-            if next_r <= 0:  # Path is invalid
+            if next_r <= 0.01:
                 radii = None
                 break
             radii.append(next_r)
+
         if not radii:
-            # Handle invalid path, e.g., by moving points closer together.
-            # This part can be improved with better recovery logic.
             continue
 
-        # Check for convergence
-        last_dist = math.sqrt((path[-1].x - end_gear.center.x) ** 2 + (path[-1].y - end_gear.center.y) ** 2)
-        endpoint_error = (radii[-1] + r_end) - last_dist
-        if abs(endpoint_error) < tolerance:
+        required_last_dist = radii[-2] + end_gear.radius
+        actual_last_dist = math.sqrt(
+            (temp_path[-1].x - temp_path[-2].x) ** 2 + (temp_path[-1].y - temp_path[-2].y) ** 2)
+        if abs(required_last_dist - actual_last_dist) < tolerance:
             break
 
-        # Adjust intermediate points
-        if len(path) > 2:
-            adjustment = endpoint_error / (len(path) - 1)
-            for i in range(1, len(path) - 1):
-                vec = Vector2D(path[i + 1].x - path[i - 1].x, path[i + 1].y - path[i - 1].y).normalized()
-                proposed_pos = Vector2D(path[i].x - vec.x * adjustment, path[i].y - vec.y * adjustment)
+        for i in range(len(path)):
+            current_point = temp_path[i + 1]
+            prev_point = temp_path[i]
+            next_point = temp_path[i + 2]
 
-                # Check for collisions before moving
-                is_move_valid = True
-                for obs in obstacles:
-                    if line_segment_intersects_polygon(path[i - 1], proposed_pos, obs) or \
-                            line_segment_intersects_polygon(proposed_pos, path[i + 1], obs):
-                        is_move_valid = False
-                        break
-                if is_move_valid:
-                    path[i] = proposed_pos
+            dist1 = math.sqrt((current_point.x - prev_point.x) ** 2 + (current_point.y - prev_point.y) ** 2)
+            error1 = (radii[i] + radii[i + 1]) - dist1
+
+            dist2 = math.sqrt((next_point.x - current_point.x) ** 2 + (next_point.y - current_point.y) ** 2)
+            error2 = (radii[i + 1] + radii[i + 2]) - dist2
+
+            vec1 = Vector2D(current_point.x - prev_point.x, current_point.y - prev_point.y).normalized()
+            vec2 = Vector2D(current_point.x - next_point.x, current_point.y - next_point.y).normalized()
+
+            proposed_pos = Vector2D(
+                current_point.x + (vec1.x * error1 + vec2.x * error2) * learning_rate,
+                current_point.y + (vec1.y * error1 + vec2.y * error2) * learning_rate
+            )
+
+            # --- THIS IS THE CRITICAL COLLISION CHECK ---
+            is_move_valid = True
+            for obs_poly in obstacles:
+                if line_segment_intersects_polygon(prev_point, proposed_pos, obs_poly) or \
+                        line_segment_intersects_polygon(proposed_pos, next_point, obs_poly):
+                    is_move_valid = False
+                    break
+
+            if is_move_valid:
+                path[i] = proposed_pos
+            # ----------------------------------------------
 
     if iteration == max_iterations - 1:
         print(f"Warning: Path refinement failed to converge after {max_iterations} iterations.")
 
-    final_radii = [r_start] + (radii if 'radii' in locals() and radii is not None else [])
+    final_radii = radii[1:-1] if 'radii' in locals() and radii and len(radii) > 2 else []
+
     return path, final_radii
 
 
@@ -189,11 +200,13 @@ Tuple[List[Vector2D], List[Tuple[Vector2D, Vector2D]]]:
     Generates a viable gear path, using A* and falling back to a detour if necessary.
     Returns the final path and the visibility graph edges for debugging.
     """
+    # Initialize graph_edges to ensure it always has a value
     graph_edges = []
+
     for obs_poly in obstacles:
         if point_in_polygon(start, obs_poly) or point_in_polygon(end, obs_poly):
             print(f"Error: Start or end point is inside an obstacle.")
-            return [], []
+            return [], graph_edges  # Return both values
 
     start_gear = Gear(id=-1, center=start, num_teeth=config.MIN_TEETH, module=config.GEAR_MODULE)
     end_gear = Gear(id=-2, center=end, num_teeth=config.MIN_TEETH, module=config.GEAR_MODULE)
@@ -220,7 +233,11 @@ Tuple[List[Vector2D], List[Tuple[Vector2D, Vector2D]]]:
 
     if not initial_path:
         print("Critical Error: Could not generate any path.")
-        return [], graph_edges
+        return [], graph_edges  # Return both values
 
+    # Call the refinement function
     path, _ = iterative_path_refinement(start_gear, end_gear, boundary, obstacles, initial_path)
+
+    # --- THIS IS THE CORRECTED LINE ---
+    # Return the path AND the graph_edges
     return path, graph_edges

@@ -91,8 +91,12 @@ class PPOAgent:
         # Calculate advantages
         values = self.value_net(states)
         next_values = self.value_net(next_states)
-        delta = rewards + config.GAMMA * next_values * (1 - dones) - values
-        advantages = delta.detach()
+        advantages = rewards + config.GAMMA * next_values * (1 - dones) - values
+        
+        # Normalize advantages for training stability
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        
+        advantages = advantages.detach()
         
         # Calculate new log probabilities
         mu, std = self.policy(states)
@@ -117,38 +121,60 @@ class PPOAgent:
         self.optimizer.step()
         
     def train(self, total_timesteps):
-        state, _ = self.env.reset()  # Unpack the reset tuple
+        state, _ = self.env.reset()
         episode_reward = 0
         episode_length = 0
-        
-        for t in range(total_timesteps):
-            # Select action
-            action, log_prob = self.select_action(state)
+
+        # Main training loop over the total number of steps
+        for t in range(1, total_timesteps + 1):
+            # 1. Select a raw, continuous action from the policy network
+            raw_action, log_prob = self.select_action(state)
             
-            # Take step in environment (returns 5 values: obs, reward, terminated, truncated, info)
-            next_state, reward, terminated, truncated, _ = self.env.step(action)
+            # 2. Process the raw action into a valid, constrained action for the environment
+            processed_action = np.zeros_like(raw_action)
+            
+            # Action type: Use argmax for a discrete choice (e.g., 0 for add_gear, 1 for connect)
+            processed_action[0] = np.argmax(raw_action[0]) 
+
+            # X and Y position: Use tanh to squash the value between [-1, 1], then scale to the workspace size
+            processed_action[1] = np.tanh(raw_action[1]) * config.WORKSPACE_SIZE / 2
+            processed_action[2] = np.tanh(raw_action[2]) * config.WORKSPACE_SIZE / 2
+            
+            # Number of teeth: Ensure the value is a positive integer within a valid range
+            num_teeth_raw = int(np.round(abs(raw_action[3])))
+            processed_action[3] = np.clip(num_teeth_raw, config.MIN_TEETH, config.MAX_TEETH) # e.g., 12 to 60
+            
+            # Z layer: Round to the nearest integer
+            processed_action[4] = int(np.round(raw_action[4]))
+            
+            # 3. Take a step in the environment using the PROCESSED action
+            next_state, reward, terminated, truncated, _ = self.env.step(processed_action)
             done = terminated or truncated
             
-            # Store transition
-            self.store_transition(state, action, log_prob, reward, next_state, done)
+            # 4. Store the RAW action and its log_prob, which PPO needs for the update
+            self.store_transition(state, raw_action, log_prob, reward, next_state, done)
             
-            # Update state
+            # Update the current state and track episode statistics
             state = next_state
             episode_reward += reward
             episode_length += 1
             
-            # Update networks
-            if t % config.BATCH_SIZE == 0 and t > 0:
-                self.update()
-            
-        if done:
-            gear_count = len(self.env.state.gears)
-            print(f"Step: {t}, Episode Reward: {episode_reward:.2f}, Length: {episode_length}, Gears: {gear_count} (Episode Gear Count)")
-            state, _ = self.env.reset()
-            episode_reward = 0
-            episode_length = 0
+            # 5. Check if the episode has finished (CORRECTLY INDENTED)
+            if done:
+                # Log the results of the completed episode
+                gear_count = len(self.env.state.gears) if self.env.state else 0
+                print(f"Step: {t}, Episode Reward: {episode_reward:.2f}, Length: {episode_length}, Gears: {gear_count}")
                 
-        # Save model
+                # Update the agent's networks using the data from the episode
+                if len(self.memory) >= config.BATCH_SIZE:
+                    self.update()
+                
+                # Reset the environment for the next episode
+                state, _ = self.env.reset()
+                episode_reward = 0
+                episode_length = 0
+
+        # After the entire training loop is finished, save the final models
         torch.save(self.policy.state_dict(), "gear_generator_policy.pth")
         torch.save(self.value_net.state_dict(), "gear_generator_value.pth")
         print("Training complete. Models saved.")

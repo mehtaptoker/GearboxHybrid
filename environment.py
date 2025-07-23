@@ -153,7 +153,7 @@ class GearEnv(gym.Env):
             scenario = generate_scenario()
 
         # Normalize coordinates to fit into the agent's workspace
-       # boundary_points = [Vector2D(p['x'], p['y']) for p in scenario["boundary_poly"]]
+        #boundary_points = [Vector2D(p['x'], p['y']) for p in scenario["boundary_poly"]]
         boundary_points = [Vector2D(p.x, p.y) for p in scenario["boundary_poly"]]
         
         # Find bounding box of the original polygon
@@ -385,81 +385,50 @@ class GearEnv(gym.Env):
             print(f"Decoded gear: center=({new_gear.center.x:.2f}, {new_gear.center.y:.2f}), "
                   f"teeth={new_gear.num_teeth}, z_layer={new_gear.z_layer}, action_type={action_type}")
         
-        # Check for failure conditions
-        if action_type == 0:  # Only check for new gears
-            # Time boundary check with detailed output
-            boundary_start = time.time()
+        # Initialize reward and termination status
+        reward = 0
+        terminated = False
+        
+        # Apply small penalty per step to encourage efficiency
+        reward -= 1
+        
+        # Handle different action types
+        if action_type == 0:  # New gear placement
+            # Perform checks for new gear placement
             boundary_inside, boundary_reason = is_gear_inside_boundary(new_gear, self.state.boundary_poly, return_reason=True)
-            boundary_time = time.time() - boundary_start
-            
-            # Time collision check with detailed output
-            collision_start = time.time()
             collision_detected, collision_reason = check_collision(new_gear, self.state.gears, return_reason=True)
-            collision_time = time.time() - collision_start
-            
-            # Time connection line distance check
-            connection_start = time.time()
             from visualization import generate_connection_line
             input_point, output_point = generate_connection_line(self.state.input_shaft, self.state.output_shaft)
-            
-            # Calculate distance to line segment
             distance = distance_to_line_segment(
                 new_gear.center, 
                 input_point, 
                 output_point
             )
             within_connection = (distance <= config.CONNECTION_PATH_WIDTH)
-            connection_time = time.time() - connection_start
             
-            if self.verbose >= 1:
-                print(f"Connection check took {connection_time:.6f} seconds: {'Within connection' if within_connection else 'Outside connection'}")
-            
-            if self.verbose >= 1:
-                print(f"Boundary check took {boundary_time:.6f} seconds: {boundary_reason}")
-                print(f"Collision check took {collision_time:.6f} seconds: {collision_reason}")
-            
+            # Assign rewards based on placement success
             if collision_detected:
                 if self.verbose >= 1:
                     print("FAIL: Gear collision detected")
-                reward = config.P_COLLISION
+                reward = -25
                 terminated = True
             elif not boundary_inside:
                 if self.verbose >= 1:
                     print("FAIL: Gear outside boundary")
-                reward = config.P_OUT_OF_BOUNDS
+                reward = -25
                 terminated = True
             elif not within_connection:
                 if self.verbose >= 1:
                     print(f"FAIL: Gear center too far from connection line (distance={distance:.2f} > {config.CONNECTION_PATH_WIDTH})")
-                reward = config.P_OUT_OF_CONNECTION
+                reward = -25
                 terminated = True
             else:
                 # Valid placement - add gear to state
                 self.state.gears.append(new_gear)
-                # Don't terminate on success
-                terminated = False
-                reward = 1.0  # Base reward for successful placement
-                
+                reward += 5  # Reward for successful placement
                 if self.verbose >= 1:
                     print("SUCCESS: Gear placed successfully")
                     print(f"Current gear count: {len(self.state.gears)}")
-                    
-                if self.verbose >= 2:
-                    print("Current gears:")
-                    for gear in self.state.gears:
-                        print(f"  Gear {gear.id}: center=({gear.center.x:.2f}, {gear.center.y:.2f}), "
-                              f"teeth={gear.num_teeth}, z_layer={gear.z_layer}")
-                
-                # Calculate distance to output shaft for the new gear
-                dist_to_output = math.sqrt(
-                    (new_gear.center.x - self.state.output_shaft.x)**2 +
-                    (new_gear.center.y - self.state.output_shaft.y)**2
-                )
-                
-                # Normalized distance reward (closer is better)
-                max_dist = math.sqrt(2) * config.WORKSPACE_SIZE
-                dist_reward = (1 - dist_to_output / max_dist) * 0.5
-                reward += dist_reward
         else:  # Modification action
             # Find and update existing gear
             found = False
@@ -472,29 +441,29 @@ class GearEnv(gym.Env):
             if not found:
                 if self.verbose >= 1:
                     print(f"FAIL: Gear with id {new_gear.id} not found")
-                reward = config.P_INVALID_ACTION
+                reward = -25  # Penalty for invalid modification
                 terminated = True
             else:
+                reward += 0.1  # Small reward for successful modification
                 if self.verbose >= 1:
                     print(f"SUCCESS: Modified gear {new_gear.id}")
-                terminated = False
-                reward = 0.1  # Small reward for successful modification
                 
-        # Only calculate reward if not terminated
+        # Check for successful gear train connection
         if not terminated:
+            if self._is_successful_connection():
+                reward += 500  # Large bonus for solving the entire problem
+                terminated = True
             # Check truncation conditions
-            if len(self.state.gears) >= config.MAX_GEARS or self.step_count >= config.MAX_STEPS_PER_EPISODE:
-                truncated = True
+            elif len(self.state.gears) >= config.MAX_GEARS or self.step_count >= config.MAX_STEPS_PER_EPISODE:
+                terminated = True
+                if not self._is_successful_connection():
+                    reward = -50  # Penalty for timeout without solution
                     
                 if self.verbose >= 2:
                     print("Current gears:")
                     for gear in self.state.gears:
                         print(f"  Gear {gear.id}: center=({gear.center.x:.2f}, {gear.center.y:.2f}), "
                               f"teeth={gear.num_teeth}, z_layer={gear.z_layer}")
-            
-            # Calculate reward only if not terminated
-            # We no longer need the success parameter
-            reward = calculate_reward(self.state)
         
         end_time = time.time()
         step_duration = end_time - start_time
