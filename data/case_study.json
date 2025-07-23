@@ -1,0 +1,31 @@
+{
+  "boundary": [
+    {"x": -50, "y": -50},
+    {"x": 50, "y": -50},
+    {"x": 50, "y": 50},
+    {"x": -50, "y": 50}
+  ],
+  "start_gear": {
+    "id": 1,
+    "center": {"x": -40, "y": 0},
+    "num_teeth": 15,
+    "module": 1.0
+  },
+  "end_gear": {
+    "id": 2,
+    "center": {"x": 40, "y": 30},
+    "num_teeth": 60,
+    "module": 1.0
+  },
+  "initial_path": [
+    {"x": -15, "y": 35},
+    {"x": 15, "y": 40}
+  ],
+  "obstacles": [
+    {
+      "id": 101,
+      "center": {"x": 0, "y": 0},
+      "radius": 15
+    }
+  ]
+}
